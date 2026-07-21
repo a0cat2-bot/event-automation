@@ -1,0 +1,4 @@
+.DS_Store
+.gstack/
+node_modules/
+.claude/settings.local.json

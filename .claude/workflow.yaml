@@ -1,0 +1,123 @@
+version: 1
+name: multi-agent-orchestrator
+
+# The Orchestrator drives execution by reading this file and following it —
+# execution order is data, not code. Do not hardcode the pipeline elsewhere.
+
+start_state: intake
+end_state: complete
+
+# Shared context is a single object threaded through every state.
+# Every agent APPENDS its handoff to the relevant list/field; nothing is
+# ever overwritten. The Orchestrator is the only thing that reads the
+# full history back to the user.
+shared_context:
+  fields:
+    request: string            # set once, at intake — never modified after
+    plan_history: list         # each researcher pass appends its plan here
+    output_history: list       # each executor pass appends its output here
+    polished_history: list     # each secretary pass appends its polish here
+    review_history: list       # each critic pass appends its verdict here
+  policy: append_only
+
+states:
+
+  intake:
+    type: start
+    owner: orchestrator
+    description: >
+      Orchestrator receives the user request, initializes shared_context
+      with request set and all history lists empty, and transitions in.
+    on_complete: research
+
+  research:
+    type: agent
+    agent: researcher
+    description: Analyze the request, gather information, produce an execution plan.
+    handoff_in: [current_context, feedback]
+    handoff_out: [current_context, completed_work, remaining_tasks, feedback]
+    on_complete: execute
+    retry:
+      max_attempts: 2
+      on_exhausted: escalate
+
+  execute:
+    type: agent
+    agent: executor
+    description: Execute the plan and produce the requested output.
+    handoff_in: [current_context, remaining_tasks, feedback]
+    handoff_out: [current_context, completed_work, remaining_tasks, feedback]
+    on_complete: polish
+    retry:
+      max_attempts: 2
+      on_exhausted: escalate
+
+  polish:
+    type: agent
+    agent: secretary
+    description: Organize and polish the output without changing its meaning.
+    handoff_in: [current_context, completed_work, feedback]
+    handoff_out: [current_context, completed_work, remaining_tasks, feedback]
+    on_complete: review
+    retry:
+      max_attempts: 2
+      on_exhausted: escalate
+
+  review:
+    type: agent
+    agent: critic
+    description: Review correctness, completeness, and requirement coverage.
+    handoff_in: [current_context, completed_work]
+    handoff_out: [current_context, completed_work, remaining_tasks, feedback]
+    # The critic's feedback.verdict decides the transition:
+    outcomes:
+      approved:
+        when: feedback.verdict == approved
+        on_complete: complete
+      rejected_research:
+        when: feedback.verdict == rejected AND feedback.target_agent == researcher
+        on_complete: research
+        increments_retry: research
+      rejected_execute:
+        when: feedback.verdict == rejected AND feedback.target_agent == executor
+        on_complete: execute
+        increments_retry: execute
+      rejected_secretary:
+        when: feedback.verdict == rejected AND feedback.target_agent == secretary
+        on_complete: polish
+        increments_retry: polish
+
+  escalate:
+    type: orchestrator
+    description: >
+      A state exhausted its retry budget. Orchestrator decides: relax the
+      requirement and force one final review pass flagged low-confidence,
+      or abort and tell the user what's blocking completion. Never silently
+      return unapproved work as if it were approved.
+    outcomes:
+      force_review:
+        on_complete: review
+      abort:
+        on_complete: aborted
+
+  aborted:
+    type: end
+    owner: orchestrator
+    description: Orchestrator reports to the user what was attempted, what failed, and why — no unapproved output is returned as final.
+
+  complete:
+    type: end
+    owner: orchestrator
+    description: Orchestrator returns the critic-approved result (latest entries in output/polished history) to the user. This is the only state that produces user-facing output on success.
+
+retry_policy:
+  default_max_attempts: 2
+  scope: per_state          # each state (research/execute/polish) tracks its own retry_count independently
+  backoff: none              # agents are stateless per call; no delay needed between attempts
+  on_global_exhaustion: abort   # if escalate's force_review also gets rejected, orchestrator must abort, not loop forever
+
+rules:
+  - Every agent in states.*.agent uses the model declared in its .claude/agents/<name>.md frontmatter (haiku for all four).
+  - Agents communicate only through handoff objects; they never address the user or each other directly.
+  - Only the Orchestrator (owner: orchestrator states) may produce user-facing text.
+  - shared_context is append-only — no state may overwrite a previous agent's entry.
