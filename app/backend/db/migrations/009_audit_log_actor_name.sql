@@ -1,0 +1,6 @@
+BEGIN;
+
+ALTER TABLE audit_logs
+  ADD COLUMN IF NOT EXISTS actor_name VARCHAR(255) NULL;
+
+COMMIT;
