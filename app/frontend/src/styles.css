@@ -310,7 +310,13 @@ a:focus-visible {
 .button--secondary {
   background: var(--surface);
   border-color: var(--border-strong);
+  box-shadow: 0 1px 3px rgba(31, 29, 26, 0.04);
   color: var(--ink);
+  transition: box-shadow 150ms ease;
+}
+
+.button--secondary:hover:not(:disabled) {
+  box-shadow: 0 1px 3px rgba(31, 29, 26, 0.08);
 }
 
 .button--quiet {
@@ -328,6 +334,7 @@ a:focus-visible {
 .button--danger {
   background: var(--surface);
   border-color: var(--error);
+  box-shadow: 0 1px 3px rgba(31, 29, 26, 0.04);
   color: var(--error-text);
   width: 100%;
 }
