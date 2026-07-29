@@ -346,10 +346,17 @@ a:focus-visible {
   cursor: pointer;
   display: inline-flex;
   font-weight: 700;
+  gap: 0.4rem;
   justify-content: center;
   min-height: 42px;
   padding: 0.65rem 1rem;
   text-decoration: none;
+}
+
+.inline-link-with-icon {
+  align-items: center;
+  display: inline-flex;
+  gap: 0.3rem;
 }
 
 .button:disabled,
@@ -451,6 +458,14 @@ tbody tr:last-child td {
   border-bottom: none;
 }
 
+tbody tr {
+  transition: background-color 120ms ease;
+}
+
+tbody tr:hover {
+  background: var(--surface-muted);
+}
+
 .audit-details {
   display: block;
   max-width: 360px;
@@ -493,12 +508,27 @@ tbody tr:last-child td {
   margin-bottom: 1.25rem;
 }
 
-.program-filter-row input[type='search'] {
-  flex: 1;
-}
-
 .program-filter-row select {
   width: auto;
+}
+
+.search-input {
+  flex: 1;
+  position: relative;
+}
+
+.search-input svg {
+  color: var(--muted);
+  left: 0.75rem;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.search-input input[type='search'] {
+  padding-left: 2.25rem;
+  width: 100%;
 }
 
 .count-badge {
@@ -729,8 +759,11 @@ tbody tr:last-child td {
 }
 
 .back-link {
+  align-items: center;
   color: var(--muted);
+  display: inline-flex;
   font-weight: 650;
+  gap: 0.35rem;
   text-decoration: none;
 }
 

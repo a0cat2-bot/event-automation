@@ -1,3 +1,4 @@
+import { IconArrowRight } from '@tabler/icons-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
@@ -561,7 +562,10 @@ export function ApplicantReviewSelectionPage() {
             </table>
           </div>
           <p>
-            <Link to={`/programs/${programId}/notifications`}>다음: 안내메일 발송 →</Link>
+            <Link className="inline-link-with-icon" to={`/programs/${programId}/notifications`}>
+              다음: 안내메일 발송
+              <IconArrowRight size={14} stroke={2} aria-hidden="true" />
+            </Link>
           </p>
         </div>
       ) : null}

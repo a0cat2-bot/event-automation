@@ -1,3 +1,4 @@
+import { IconSearch } from '@tabler/icons-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
@@ -241,13 +242,16 @@ export function DashboardPage() {
 
       {programs.length > 0 ? (
         <div className="program-filter-row">
-          <input
-            type="search"
-            value={searchQuery}
-            onChange={(event) => setSearchQuery(event.target.value)}
-            placeholder="프로그램명 검색"
-            aria-label="프로그램명 검색"
-          />
+          <div className="search-input">
+            <IconSearch size={16} stroke={2} aria-hidden="true" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="프로그램명 검색"
+              aria-label="프로그램명 검색"
+            />
+          </div>
           <select
             value={statusFilter}
             onChange={(event) =>

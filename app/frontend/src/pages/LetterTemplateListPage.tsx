@@ -1,3 +1,4 @@
+import { IconArrowRight } from '@tabler/icons-react';
 import { FormEvent, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 
@@ -155,7 +156,10 @@ export function LetterTemplateListPage() {
                       {typeLabelFor(template, categories)} · {template.brand_variant}
                     </p>
                   </div>
-                  <span aria-hidden="true">편집 →</span>
+                  <span className="inline-link-with-icon" aria-hidden="true">
+                    편집
+                    <IconArrowRight size={14} stroke={2} />
+                  </span>
                 </Link>
               ))}
             </div>

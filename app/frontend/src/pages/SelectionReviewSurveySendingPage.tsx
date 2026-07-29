@@ -1,3 +1,4 @@
+import { IconChevronDown } from '@tabler/icons-react';
 import { Fragment, useCallback, useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 
@@ -245,7 +246,13 @@ export function SelectionReviewSurveySendingPage() {
                             type="button"
                             onClick={() => setExpandedTemplateId(isExpanded ? null : templateId)}
                           >
-                            {isExpanded ? '접기 ▲' : '펼치기 ▼'}
+                            {isExpanded ? '접기' : '펼치기'}
+                            <IconChevronDown
+                              size={14}
+                              stroke={2}
+                              className={isExpanded ? 'chevron chevron--open' : 'chevron'}
+                              aria-hidden="true"
+                            />
                           </button>
                         </td>
                       </tr>

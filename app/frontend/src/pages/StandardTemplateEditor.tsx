@@ -1,3 +1,4 @@
+import { IconArrowLeft } from '@tabler/icons-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
@@ -223,7 +224,8 @@ export function StandardTemplateEditor({
           className="back-link"
           to={programId ? `/programs/${programId}/letters` : '/letter-templates'}
         >
-          {programId ? '← 레터 미리보기로' : '← 템플릿 목록'}
+          <IconArrowLeft size={14} stroke={2} aria-hidden="true" />
+          {programId ? '레터 미리보기로' : '템플릿 목록'}
         </Link>
         {programId ? (
           <div className="editor-actions">

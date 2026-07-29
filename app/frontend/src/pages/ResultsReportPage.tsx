@@ -1,3 +1,4 @@
+import { IconArrowRight } from '@tabler/icons-react';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 
@@ -109,8 +110,14 @@ export function ResultsReportPage() {
 
           {report.format === 'pdf' && report.file_path ? (
             <p>
-              <a href={resolveBackendAssetUrl(report.file_path)} target="_blank" rel="noreferrer">
-                PDF 다운로드 →
+              <a
+                className="inline-link-with-icon"
+                href={resolveBackendAssetUrl(report.file_path)}
+                target="_blank"
+                rel="noreferrer"
+              >
+                PDF 다운로드
+                <IconArrowRight size={14} stroke={2} aria-hidden="true" />
               </a>
             </p>
           ) : null}

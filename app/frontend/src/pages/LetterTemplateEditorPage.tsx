@@ -1,3 +1,4 @@
+import { IconArrowLeft } from '@tabler/icons-react';
 import { ChangeEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KonvaEventObject } from 'konva/lib/Node';
 import { Group, Image as KonvaImage, Layer, Rect, Stage, Text } from 'react-konva';
@@ -520,7 +521,8 @@ export function LetterTemplateEditorPage() {
           className="back-link"
           to={programId ? `/programs/${programId}/letters` : '/letter-templates'}
         >
-          {programId ? '← 레터 미리보기로' : '← 템플릿 목록'}
+          <IconArrowLeft size={14} stroke={2} aria-hidden="true" />
+          {programId ? '레터 미리보기로' : '템플릿 목록'}
         </Link>
         {programId || hasCanvas ? (
           <div className="editor-actions">

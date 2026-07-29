@@ -1,3 +1,4 @@
+import { IconArrowRight } from '@tabler/icons-react';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
@@ -199,8 +200,14 @@ export function LetterDraftsPage() {
                   {preview?.fileUrl ? (
                     <>
                       <p>
-                        <a href={preview.fileUrl} target="_blank" rel="noreferrer">
-                          새 탭에서 열기 →
+                        <a
+                          className="inline-link-with-icon"
+                          href={preview.fileUrl}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          새 탭에서 열기
+                          <IconArrowRight size={14} stroke={2} aria-hidden="true" />
                         </a>
                       </p>
                       {preview.outputFormat === 'image' ? (
