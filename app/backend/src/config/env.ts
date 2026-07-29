@@ -13,4 +13,10 @@ export const env = {
   knoxPortalApiUrl: process.env.KNOX_PORTAL_API_URL || undefined,
   knoxPortalApiToken: process.env.KNOX_PORTAL_API_TOKEN || undefined,
   knoxPortalAccount: process.env.KNOX_PORTAL_ACCOUNT || undefined,
+  // AI features are off unless a deployment opts in. See services/llm.
+  llmProvider: process.env.LLM_PROVIDER || 'disabled',
+  llmModel: process.env.LLM_MODEL || undefined,
+  anthropicApiKey: process.env.ANTHROPIC_API_KEY || undefined,
+  aiProApiUrl: process.env.AI_PRO_API_URL || undefined,
+  aiProApiToken: process.env.AI_PRO_API_TOKEN || undefined,
 } as const;

@@ -10,9 +10,10 @@
     "start": "node dist/server.js",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "eslint \"src/**/*.ts\" --max-warnings=0",
-    "test": "node --import tsx --test src/**/*.test.ts"
+    "test": "node --import tsx --test \"src/**/*.test.ts\""
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.115.0",
     "cors": "^2.8.5",
     "csv-parse": "^6.1.0",
     "dotenv": "^16.4.7",
