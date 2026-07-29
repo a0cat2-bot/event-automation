@@ -13,6 +13,13 @@ export const env = {
   knoxPortalApiUrl: process.env.KNOX_PORTAL_API_URL || undefined,
   knoxPortalApiToken: process.env.KNOX_PORTAL_API_TOKEN || undefined,
   knoxPortalAccount: process.env.KNOX_PORTAL_ACCOUNT || undefined,
+  // Access control. `disabled` keeps the previous no-auth behaviour. See services/auth.
+  authProvider: process.env.AUTH_PROVIDER || 'disabled',
+  authSsoEmailHeader: process.env.AUTH_SSO_EMAIL_HEADER || 'X-Forwarded-Email',
+  authSsoUserHeader: process.env.AUTH_SSO_USER_HEADER || 'X-Forwarded-User',
+  authSsoNameHeader: process.env.AUTH_SSO_NAME_HEADER || 'X-Forwarded-DisplayName',
+  // Comma-separated emails always granted admin, so a fresh deployment is never locked out.
+  authBootstrapAdmins: process.env.AUTH_BOOTSTRAP_ADMINS || '',
   // AI features are off unless a deployment opts in. See services/llm.
   llmProvider: process.env.LLM_PROVIDER || 'disabled',
   llmModel: process.env.LLM_MODEL || undefined,
