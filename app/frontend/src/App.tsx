@@ -1,6 +1,7 @@
 import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 
 import { AppLayout } from './components/AppLayout';
+import { SessionProvider } from './components/SessionContext';
 import { AuditLogPage } from './pages/AuditLogPage';
 import { ApplicantReviewSelectionPage } from './pages/ApplicantReviewSelectionPage';
 import { ApplicantUploadPage } from './pages/ApplicantUploadPage';
@@ -18,6 +19,7 @@ import { ProgramSetupPage } from './pages/ProgramSetupPage';
 import { ResultsReportPage } from './pages/ResultsReportPage';
 import { SelectionReviewSurveySendingPage } from './pages/SelectionReviewSurveySendingPage';
 import { SurveyResultsPage } from './pages/SurveyResultsPage';
+import { UsersPage } from './pages/UsersPage';
 
 const router = createBrowserRouter([
   {
@@ -45,6 +47,7 @@ const router = createBrowserRouter([
       { path: '/letter-templates/:id', element: <LetterTemplateEditorPage /> },
       { path: '/business-units', element: <BusinessUnitsPage /> },
       { path: '/org-settings', element: <OrgSettingsPage /> },
+      { path: '/users', element: <UsersPage /> },
       { path: '/audit-logs', element: <AuditLogPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],
@@ -52,5 +55,9 @@ const router = createBrowserRouter([
 ]);
 
 export function App() {
-  return <RouterProvider router={router} />;
+  return (
+    <SessionProvider>
+      <RouterProvider router={router} />
+    </SessionProvider>
+  );
 }

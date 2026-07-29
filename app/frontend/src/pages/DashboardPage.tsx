@@ -4,6 +4,7 @@ import { Link } from 'react-router-dom';
 
 import { listPrograms, type Program } from '../api/programs';
 import { PageShell } from '../components/PageShell';
+import { useSession } from '../components/SessionContext';
 import { programDateDisplay, programStartDateValue } from '../utils/program';
 
 const STATUS_LABELS: Record<Program['status'], string> = {
@@ -103,6 +104,9 @@ function ProgramProgress({ program }: { program: Program }) {
 }
 
 export function DashboardPage() {
+  // Viewers can read the list but cannot start a program; the backend enforces this too.
+  const { allows } = useSession();
+  const canCreate = allows('coordinator');
   const [programs, setPrograms] = useState<Program[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -221,9 +225,11 @@ export function DashboardPage() {
           <h2>프로그램 목록</h2>
           <p>생성한 프로그램과 진행 현황입니다.</p>
         </div>
-        <Link className="button button--primary" to="/programs/new">
-          + 새 프로그램
-        </Link>
+        {canCreate ? (
+          <Link className="button button--primary" to="/programs/new">
+            + 새 프로그램
+          </Link>
+        ) : null}
       </div>
 
       {isLoading ? <p className="state-message">프로그램을 불러오는 중입니다…</p> : null}

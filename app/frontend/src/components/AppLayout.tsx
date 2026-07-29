@@ -2,12 +2,23 @@ import { IconChevronDown, IconUser } from '@tabler/icons-react';
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
-const ADMIN_LINKS = [
-  { to: '/letter-templates', label: '레터 템플릿' },
-  { to: '/business-units', label: '사업부 관리' },
-  { to: '/org-settings', label: '조직 설정' },
-  { to: '/audit-logs', label: '작업 히스토리' },
+import { ROLE_LABELS, type UserRole } from '../api/session';
+import { useSession } from './SessionContext';
+
+/** `minRole` is the role the corresponding screen requires, matching the backend route guards. */
+const ADMIN_LINKS: Array<{ to: string; label: string; minRole: UserRole }> = [
+  { to: '/letter-templates', label: '레터 템플릿', minRole: 'coordinator' },
+  { to: '/business-units', label: '사업부 관리', minRole: 'admin' },
+  { to: '/org-settings', label: '조직 설정', minRole: 'admin' },
+  { to: '/users', label: '사용자 관리', minRole: 'admin' },
+  { to: '/audit-logs', label: '작업 히스토리', minRole: 'admin' },
 ];
+
+const ROLE_BADGE_CLASS: Record<UserRole, string> = {
+  admin: 'status-badge status-badge--info',
+  coordinator: 'status-badge status-badge--success',
+  viewer: 'status-badge',
+};
 
 function useClickOutside(onOutsideClick: () => void) {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -27,13 +38,19 @@ function useClickOutside(onOutsideClick: () => void) {
 
 function AdminMenu() {
   const location = useLocation();
+  const { allows } = useSession();
   const [isOpen, setIsOpen] = useState(false);
-  const isActive = ADMIN_LINKS.some((link) => location.pathname.startsWith(link.to));
   const containerRef = useClickOutside(() => setIsOpen(false));
+
+  // Only offer screens this role can actually open, so nobody navigates into a 403.
+  const visibleLinks = ADMIN_LINKS.filter((link) => allows(link.minRole));
+  const isActive = visibleLinks.some((link) => location.pathname.startsWith(link.to));
 
   useEffect(() => {
     setIsOpen(false);
   }, [location.pathname]);
+
+  if (visibleLinks.length === 0) return null;
 
   return (
     <div className="admin-menu" ref={containerRef}>
@@ -53,7 +70,7 @@ function AdminMenu() {
       </button>
       {isOpen ? (
         <div className="admin-menu__panel">
-          {ADMIN_LINKS.map((link) => (
+          {visibleLinks.map((link) => (
             <NavLink key={link.to} to={link.to}>
               {link.label}
             </NavLink>
@@ -78,15 +95,25 @@ function ActorChip({
   actorName: string;
   onActorNameChange: (value: string) => void;
 }) {
+  const { session } = useSession();
   const [isOpen, setIsOpen] = useState(false);
   const containerRef = useClickOutside(() => setIsOpen(false));
   const inputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    if (isOpen) inputRef.current?.focus();
-  }, [isOpen]);
+  // With access control on, identity comes from the SSO gateway and is not editable here. Without
+  // it, the actor is a self-declared name and the chip stays a text field, as before.
+  const signedInUser = session?.authEnforced ? session.user : null;
+  const isEditable = !session?.authEnforced;
+  // Kept separate from the label below: initials must come from a real name, never from the
+  // "not set" placeholder, which would render a meaningless two-character avatar.
+  const identityName = signedInUser ? (signedInUser.name ?? signedInUser.email) : actorName;
+  const displayName = identityName || '작업자 미설정';
 
-  const initials = actorInitials(actorName);
+  useEffect(() => {
+    if (isOpen && isEditable) inputRef.current?.focus();
+  }, [isOpen, isEditable]);
+
+  const initials = actorInitials(identityName);
 
   return (
     <div className="actor-chip" ref={containerRef}>
@@ -99,7 +126,12 @@ function ActorChip({
         <span className="actor-chip__avatar">
           {initials || <IconUser size={14} stroke={2} aria-hidden="true" />}
         </span>
-        <span className="actor-chip__name">{actorName || '작업자 미설정'}</span>
+        <span className="actor-chip__name">{displayName}</span>
+        {signedInUser ? (
+          <span className={ROLE_BADGE_CLASS[signedInUser.role]}>
+            {ROLE_LABELS[signedInUser.role]}
+          </span>
+        ) : null}
         <IconChevronDown
           size={14}
           stroke={2}
@@ -109,14 +141,25 @@ function ActorChip({
       </button>
       {isOpen ? (
         <div className="actor-chip__panel">
-          <label htmlFor="actor-name-input">작업자 이름</label>
-          <input
-            id="actor-name-input"
-            ref={inputRef}
-            value={actorName}
-            onChange={(event) => onActorNameChange(event.target.value)}
-            placeholder="작업자 이름 입력"
-          />
+          {isEditable ? (
+            <>
+              <label htmlFor="actor-name-input">작업자 이름</label>
+              <input
+                id="actor-name-input"
+                ref={inputRef}
+                value={actorName}
+                onChange={(event) => onActorNameChange(event.target.value)}
+                placeholder="작업자 이름 입력"
+              />
+            </>
+          ) : (
+            <dl className="actor-chip__identity">
+              <dt>계정</dt>
+              <dd>{signedInUser?.email ?? '로그인되지 않음'}</dd>
+              <dt>권한</dt>
+              <dd>{signedInUser ? ROLE_LABELS[signedInUser.role] : '없음'}</dd>
+            </dl>
+          )}
         </div>
       ) : null}
     </div>

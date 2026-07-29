@@ -9,6 +9,14 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
     headers.set('X-Actor-Name', encodeURIComponent(actorName));
   }
 
+  // Development aid for exercising role-based UI without an SSO proxy, paired with the backend's
+  // AUTH_PROVIDER=dev_header. Guarded by import.meta.env.DEV so it is stripped from production
+  // builds and can never authenticate a real deployment.
+  if (import.meta.env.DEV) {
+    const devUserEmail = localStorage.getItem('devUserEmail') ?? import.meta.env.VITE_DEV_USER_EMAIL;
+    if (devUserEmail) headers.set('X-Dev-User-Email', devUserEmail);
+  }
+
   const response = await fetch(`${API_BASE_URL.replace(/\/$/, '')}${path}`, {
     ...init,
     headers,

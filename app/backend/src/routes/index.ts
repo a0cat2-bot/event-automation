@@ -16,6 +16,7 @@ import { reportsRouter } from './reports.js';
 import { sallyRouter } from './sally.js';
 import { selectionRouter } from './selection.js';
 import { sessionRouter } from './session.js';
+import { usersRouter } from './users.js';
 
 export const apiRouter = Router();
 
@@ -34,6 +35,9 @@ apiRouter.use('/letter-categories', requireRoleByMethod('viewer', 'admin'));
 
 // Audit history is an oversight function, not an operational one.
 apiRouter.use('/audit-logs', requireRole('admin'));
+
+// Granting roles is the most privileged action in the app.
+apiRouter.use('/users', requireRole('admin'));
 
 // Program operation. Viewers may read; only coordinators and above may change anything.
 // Business-unit scoping is enforced per program inside the routers.
@@ -55,3 +59,4 @@ apiRouter.use(orgSettingsRouter);
 apiRouter.use(giftsRouter);
 apiRouter.use(reportsRouter);
 apiRouter.use(auditLogsRouter);
+apiRouter.use(usersRouter);

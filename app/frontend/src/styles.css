@@ -1029,6 +1029,57 @@ tbody tr:hover {
   color: var(--warning);
 }
 
+/* Secondary line inside a table cell, e.g. an email under a display name. */
+.table-subtext {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.checkbox-set {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  display: grid;
+  gap: 0.4rem;
+  padding: 0.75rem;
+}
+
+.checkbox-set legend {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+  padding: 0 0.35rem;
+}
+
+.checkbox-row {
+  align-items: center;
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Checkboxes must not stretch to the full-width rule that inputs inherit. */
+.checkbox-row input[type='checkbox'] {
+  min-height: 0;
+  width: auto;
+}
+
+.actor-chip__identity {
+  display: grid;
+  gap: 0.25rem 0.75rem;
+  grid-template-columns: auto 1fr;
+  margin: 0;
+}
+
+.actor-chip__identity dt {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.actor-chip__identity dd {
+  font-size: 0.82rem;
+  margin: 0;
+}
+
 .precaution-list {
   display: grid;
   gap: 0.65rem;

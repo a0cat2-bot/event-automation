@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 
 import { deleteProgram, getProgram, type Program } from '../api/programs';
 import { PageShell } from '../components/PageShell';
+import { useSession } from '../components/SessionContext';
 import { programDateDisplay } from '../utils/program';
 
 const SELECTION_MODE_LABELS: Record<Program['selection_mode'], string> = {
@@ -26,6 +27,8 @@ function intakeField(intakeData: Program['intake_data'], key: string): string | 
 export function ProgramDetailPage() {
   const { programId = '' } = useParams();
   const navigate = useNavigate();
+  // Viewers may open a program but not change it; the backend enforces this too.
+  const canEdit = useSession().allows('coordinator');
   const base = `/programs/${programId}`;
   const [program, setProgram] = useState<Program | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -101,26 +104,28 @@ export function ProgramDetailPage() {
 
       {program ? (
         <>
-          <div className="standard-save-row" style={{ marginBottom: '1.5rem' }}>
-            <Link className="button button--secondary" to={`${base}/edit`}>
-              프로그램 정보 수정
-            </Link>
-            <Link
-              className="button button--secondary"
-              to={`/programs/new?cloneFrom=${programId}`}
-            >
-              프로그램 복제
-            </Link>
-            <button
-              className="button button--danger"
-              type="button"
-              onClick={handleDelete}
-              disabled={isDeleting}
-              style={{ width: 'auto' }}
-            >
-              {isDeleting ? '삭제 중…' : '프로그램 삭제'}
-            </button>
-          </div>
+          {canEdit ? (
+            <div className="standard-save-row" style={{ marginBottom: '1.5rem' }}>
+              <Link className="button button--secondary" to={`${base}/edit`}>
+                프로그램 정보 수정
+              </Link>
+              <Link
+                className="button button--secondary"
+                to={`/programs/new?cloneFrom=${programId}`}
+              >
+                프로그램 복제
+              </Link>
+              <button
+                className="button button--danger"
+                type="button"
+                onClick={handleDelete}
+                disabled={isDeleting}
+                style={{ width: 'auto' }}
+              >
+                {isDeleting ? '삭제 중…' : '프로그램 삭제'}
+              </button>
+            </div>
+          ) : null}
           {deleteError ? (
             <p className="form-error" role="alert">
               {deleteError}
