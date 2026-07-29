@@ -6,6 +6,7 @@ import { generateLetter } from '../api/letters';
 import { getLetterTemplates, type LetterTemplate } from '../api/letterTemplates';
 import { getProgram, type Program } from '../api/programs';
 import { PageShell } from '../components/PageShell';
+import { ProgramContextBar } from '../components/ProgramContextBar';
 import { resolveBackendAssetUrl } from '../config/api';
 
 const TEMPLATE_TYPE_LABELS: Record<string, string> = {
@@ -38,7 +39,7 @@ export function LetterDraftsPage() {
       getProgram(programId, controller.signal).then(({ program: next }) => {
         if (isCurrent) setProgram(next);
       }),
-      getLetterTemplates(controller.signal).then(({ templates: next }) => {
+      getLetterTemplates(controller.signal, programId).then(({ templates: next }) => {
         if (isCurrent) setTemplates(next);
       }),
       listApplicants(programId, controller.signal).then(({ applicants: next }) => {
@@ -110,7 +111,7 @@ export function LetterDraftsPage() {
 
   return (
     <PageShell
-      title="레터 초안"
+      title="레터 미리보기/발송 준비"
       description={
         program
           ? `${program.name}의 레터 템플릿을 골라 실제 프로그램 정보(일시·장소·프로그램명·등록된 상품)로 채워진 초안을 미리 보고, 그대로 편집하거나 발송 화면으로 이동할 수 있습니다.`
@@ -118,6 +119,7 @@ export function LetterDraftsPage() {
       }
       showStubNote={false}
     >
+      <ProgramContextBar programId={programId} />
       {isLoading ? <p className="state-message">불러오는 중입니다…</p> : null}
       {loadError ? (
         <p className="state-message state-message--error" role="alert">
@@ -150,9 +152,15 @@ export function LetterDraftsPage() {
                 <article className="content-card" key={template.id}>
                   <div className="section-heading">
                     <div>
-                      <strong>{template.name}</strong>
+                      <div className="editor-actions">
+                        <strong>{template.name}</strong>
+                        <span className="status-badge">
+                          {template.is_customized ? '이 프로그램에 맞게 수정됨' : '표준 사용 중'}
+                        </span>
+                      </div>
                       <p>
-                        {template.brand_variant} · {template.layout_mode === 'standard' ? '표준 레이아웃' : '자유 배치'}
+                        {template.brand_variant} ·{' '}
+                        {template.layout_mode === 'standard' ? '표준 레이아웃' : '자유 배치'}
                       </p>
                     </div>
                     <div className="editor-actions">
@@ -164,7 +172,10 @@ export function LetterDraftsPage() {
                       >
                         {preview?.isGenerating ? '생성 중…' : '초안 미리보기'}
                       </button>
-                      <Link className="button button--secondary" to={`/letter-templates/${template.id}`}>
+                      <Link
+                        className="button button--secondary"
+                        to={`/programs/${programId}/letters/${template.id}/edit`}
+                      >
                         편집하기
                       </Link>
                       {templateType !== 'recruitment' ? (
@@ -195,13 +206,18 @@ export function LetterDraftsPage() {
                         <img
                           src={preview.fileUrl}
                           alt={`${template.name} 미리보기`}
-                          style={{ maxWidth: '360px', width: '100%', borderRadius: '8px' }}
+                          style={{ maxWidth: '360px', width: '100%', borderRadius: 'var(--radius-sm)' }}
                         />
                       ) : (
                         <iframe
                           title={`${template.name} 미리보기`}
                           src={preview.fileUrl}
-                          style={{ width: '100%', height: '480px', border: '1px solid #dce3e8', borderRadius: '8px' }}
+                          style={{
+                            width: '100%',
+                            height: '480px',
+                            border: '1px solid var(--border)',
+                            borderRadius: 'var(--radius-sm)',
+                          }}
                         />
                       )}
                     </>

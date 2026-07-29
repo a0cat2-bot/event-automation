@@ -110,6 +110,21 @@ function intakeValue(intakeData: unknown, ...keys: string[]): string | null {
   return null;
 }
 
+function programDateValue(intakeData: unknown): string | null {
+  if (isRecord(intakeData)) {
+    const startDate =
+      typeof intakeData.program_start_date === 'string'
+        ? intakeData.program_start_date.trim()
+        : '';
+    if (startDate) {
+      const endDate =
+        typeof intakeData.program_end_date === 'string' ? intakeData.program_end_date.trim() : '';
+      return endDate && endDate !== startDate ? `${startDate} ~ ${endDate}` : startDate;
+    }
+  }
+  return intakeValue(intakeData, 'program_date', 'date');
+}
+
 function buildPlaceholderValues(
   context: GenerationContextRow,
   applicant: ApplicantRow,
@@ -121,7 +136,7 @@ function buildPlaceholderValues(
     applicant_email: applicant.email,
     department: applicant.department,
     program_name: context.program_name,
-    program_date: intakeValue(context.intake_data, 'program_date', 'date'),
+    program_date: programDateValue(context.intake_data),
     program_location: intakeValue(context.intake_data, 'program_location', 'location'),
     program_time: intakeValue(context.intake_data, 'program_time', 'time'),
     // TODO(§7/§10): Resolve these after Sally and gift selection are implemented.
@@ -417,7 +432,7 @@ async function generateStandardLettersForApplicants(params: {
   // whatever static text is saved on the template, so the same reusable standard-layout template
   // renders correctly for whichever program it's used with instead of requiring the coordinator
   // to re-type per-program details into the template editor every time.
-  const programDate = intakeValue(context.intake_data, 'program_date', 'date');
+  const programDate = programDateValue(context.intake_data);
   const programTime = intakeValue(context.intake_data, 'program_time', 'time');
   const programLocation = intakeValue(context.intake_data, 'program_location', 'location');
   const programDatetimeText = [programDate, programTime].filter(Boolean).join(' ') || null;
@@ -668,16 +683,19 @@ export async function generateLettersForApplicants(params: {
     `SELECT t.id AS template_id,
             t.brand_variant AS template_brand_variant,
             COALESCE(t.output_format, 'pdf') AS output_format,
-            t.background_image_url,
-            t.canvas_width,
-            t.canvas_height,
-            t.text_fields,
+            COALESCE(plc.background_image_url, t.background_image_url) AS background_image_url,
+            COALESCE(plc.canvas_width, t.canvas_width) AS canvas_width,
+            COALESCE(plc.canvas_height, t.canvas_height) AS canvas_height,
+            COALESCE(plc.text_fields, t.text_fields) AS text_fields,
             p.id AS program_id,
             p.name AS program_name,
-            p.business_unit AS program_business_unit,
+            bu.name AS program_business_unit,
             p.intake_data
      FROM letter_templates t
      CROSS JOIN programs p
+     JOIN business_units bu ON bu.id = p.business_unit_id
+     LEFT JOIN program_letter_customizations plc
+       ON plc.template_id = t.id AND plc.program_id = p.id
      WHERE t.id = $1
        AND t.is_active = TRUE
        AND p.id = $2
@@ -702,7 +720,7 @@ export async function generateLettersForApplicants(params: {
   const templateModeResult = await pool.query<TemplateModeRow>(
     `SELECT t.layout_mode,
             t.category_id,
-            t.standard_content,
+            COALESCE(plc.standard_content, t.standard_content) AS standard_content,
             c.slug AS category_slug,
             c.has_datetime,
             c.has_location,
@@ -712,9 +730,11 @@ export async function generateLettersForApplicants(params: {
             c.default_title_text
      FROM letter_templates t
      LEFT JOIN letter_categories c ON c.id = t.category_id
+     LEFT JOIN program_letter_customizations plc
+       ON plc.template_id = t.id AND plc.program_id = $2
      WHERE t.id = $1 AND t.is_active = TRUE
      LIMIT 1`,
-    [params.templateId],
+    [params.templateId, params.programId],
   );
   const templateMode = templateModeResult.rows[0];
   if (!templateMode) {

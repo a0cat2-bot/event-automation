@@ -12,6 +12,7 @@ import { validate } from '../middleware/validate.js';
 import { idParams } from '../schemas/common.js';
 import {
   letterStandardContentBody,
+  letterTemplateCategoryUpdateBody,
   letterTemplateCreateBody,
   letterTemplateFieldsBody,
 } from '../schemas/contracts.js';
@@ -34,6 +35,7 @@ interface LetterTemplateRow {
   layout_mode: 'freeform' | 'standard';
   category_id: string | null;
   standard_content: unknown;
+  is_customized?: boolean;
 }
 
 interface LetterCategoryFlagsRow {
@@ -47,6 +49,7 @@ interface LetterCategoryFlagsRow {
 
 const templateListQuery = z.object({
   template_type: z.enum(['recruitment', 'notification', 'gift_notification']).optional(),
+  program_id: z.string().uuid().optional(),
 });
 
 const backgroundUpload = multer({
@@ -108,21 +111,79 @@ letterTemplatesRouter.post(
   },
 );
 
+letterTemplatesRouter.put(
+  '/letter-templates/:id/category',
+  validate({ params: idParams, body: letterTemplateCategoryUpdateBody }),
+  async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const { category_id: categoryId } = letterTemplateCategoryUpdateBody.parse(request.body);
+
+      const templateResult = await pool.query<Pick<LetterTemplateRow, 'id' | 'layout_mode'>>(
+        `SELECT id, layout_mode FROM letter_templates WHERE id = $1 AND is_active = TRUE LIMIT 1`,
+        [request.params.id],
+      );
+      const template = templateResult.rows[0];
+      if (!template) {
+        response.status(404).json({ error: 'Letter template not found' });
+        return;
+      }
+      if (template.layout_mode !== 'freeform') {
+        response.status(400).json({
+          error:
+            '표준 레이아웃 템플릿의 분류는 여기서 바꿀 수 없습니다. 콘텐츠 구조와 함께 정해집니다.',
+        });
+        return;
+      }
+
+      if (categoryId) {
+        const categoryResult = await pool.query<{ id: string }>(
+          'SELECT id FROM letter_categories WHERE id = $1 LIMIT 1',
+          [categoryId],
+        );
+        if (!categoryResult.rows[0]) {
+          response.status(404).json({ error: 'Letter category not found' });
+          return;
+        }
+      }
+
+      const result = await pool.query<LetterTemplateRow>(
+        `UPDATE letter_templates
+         SET category_id = $2
+         WHERE id = $1
+         RETURNING id, name, template_type, brand_variant, output_format, version,
+                   created_at, created_by, is_active, layout_mode, category_id,
+                   standard_content`,
+        [request.params.id, categoryId],
+      );
+
+      response.json({ template: result.rows[0] });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
 letterTemplatesRouter.get(
   '/letter-templates',
   validate({ query: templateListQuery }),
   async (request: Request, response: Response, next: NextFunction) => {
     try {
-      const { template_type } = templateListQuery.parse(request.query);
+      const { template_type, program_id } = templateListQuery.parse(request.query);
+      const customizationSelect = program_id ? ', (plc.id IS NOT NULL) AS is_customized' : '';
+      const customizationJoin = program_id
+        ? 'LEFT JOIN program_letter_customizations plc ON plc.template_id = t.id AND plc.program_id = $2'
+        : '';
       const result = await pool.query<LetterTemplateRow>(
-        `SELECT id, name, template_type, brand_variant, output_format, version,
-                created_at, created_by, is_active, background_image_url,
-                canvas_width, canvas_height, layout_mode, category_id, standard_content
-         FROM letter_templates
-         WHERE is_active = TRUE
-           AND ($1::template_type IS NULL OR template_type = $1::template_type)
-         ORDER BY name ASC, version DESC, created_at DESC`,
-        [template_type ?? null],
+        `SELECT t.id, t.name, t.template_type, t.brand_variant, t.output_format, t.version,
+                t.created_at, t.created_by, t.is_active, t.background_image_url,
+                t.canvas_width, t.canvas_height, t.layout_mode, t.category_id,
+                t.standard_content${customizationSelect}
+         FROM letter_templates t
+         ${customizationJoin}
+         WHERE t.is_active = TRUE
+           AND ($1::template_type IS NULL OR t.template_type = $1::template_type)
+         ORDER BY t.name ASC, t.version DESC, t.created_at DESC`,
+        program_id ? [template_type ?? null, program_id] : [template_type ?? null],
       );
 
       response.json({ templates: result.rows });

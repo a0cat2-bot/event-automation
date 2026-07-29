@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 
 import { listPrograms, type Program } from '../api/programs';
 import { PageShell } from '../components/PageShell';
+import { programDateDisplay, programStartDateValue } from '../utils/program';
 
 const STATUS_LABELS: Record<Program['status'], string> = {
   planning: '기획 중',
@@ -25,16 +26,6 @@ function stepStatus(current: number, total: number): StepStatus {
   return 'pending';
 }
 
-function progressStageLabel(program: Program): string {
-  if (program.has_report) return '완료';
-  if (program.gift_recipient_count > 0) return '상품 선정 중';
-  if (program.survey_completed_count > 0) return '설문 진행 중';
-  if (program.notified_count > 0) return '안내 발송 중';
-  if (program.participant_count > 0) return '선정 완료';
-  if (program.applicant_count > 0) return '모집 중';
-  return '모집 준비';
-}
-
 function programDate(program: Program): Date | null {
   const value = intakeField(program.intake_data, 'program_date');
   if (!value) return null;
@@ -53,6 +44,13 @@ function programDate(program: Program): Date | null {
     return null;
   }
   return parsed;
+}
+
+function formatIsoDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function ProgressStep({
@@ -100,6 +98,8 @@ export function DashboardPage() {
   const [programs, setPrograms] = useState<Program[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState<Program['status'] | 'all'>('all');
 
   useEffect(() => {
     const controller = new AbortController();
@@ -151,7 +151,7 @@ export function DashboardPage() {
       {
         label: '행사일 임박',
         programs: programs.filter((program) => {
-          const date = programDate(program);
+          const date = programStartDateValue(program.intake_data) ?? programDate(program);
           return (
             date !== null &&
             date >= today &&
@@ -169,9 +169,15 @@ export function DashboardPage() {
     ].filter((group) => group.programs.length > 0);
   }, [programs]);
 
+  const filteredPrograms = programs.filter((program) => {
+    const matchesStatus = statusFilter === 'all' || program.status === statusFilter;
+    const matchesSearch = program.name.toLowerCase().includes(searchQuery.trim().toLowerCase());
+    return matchesStatus && matchesSearch;
+  });
+
   return (
     <PageShell
-      title="대시보드"
+      title="프로그램"
       description="진행 중인 프로그램과 다음 작업을 확인하세요."
       showStubNote={false}
     >
@@ -226,25 +232,57 @@ export function DashboardPage() {
       ) : null}
 
       {programs.length > 0 ? (
+        <div className="program-filter-row">
+          <input
+            type="search"
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="프로그램명 검색"
+            aria-label="프로그램명 검색"
+          />
+          <select
+            value={statusFilter}
+            onChange={(event) =>
+              setStatusFilter(event.target.value as Program['status'] | 'all')
+            }
+            aria-label="상태 필터"
+          >
+            <option value="all">전체 상태</option>
+            {Object.entries(STATUS_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : null}
+
+      {programs.length > 0 && filteredPrograms.length === 0 ? (
+        <p className="state-message">조건에 맞는 프로그램이 없습니다.</p>
+      ) : null}
+
+      {filteredPrograms.length > 0 ? (
         <div style={{ overflowX: 'auto' }}>
           <table>
             <thead>
               <tr>
                 <th>프로그램명</th>
-                <th>사업부</th>
+                <th style={{ width: '10%' }}>사업부</th>
                 <th>상태</th>
                 <th>일시</th>
                 <th>신청자/참여자</th>
-                <th>진행 단계</th>
-                <th></th>
+                <th style={{ width: '30%' }}>진행 단계</th>
               </tr>
             </thead>
             <tbody>
-              {programs.map((program) => {
-                const programDate = intakeField(program.intake_data, 'program_date');
-                const programTime = intakeField(program.intake_data, 'program_time');
-                const storedStatusLabel = STATUS_LABELS[program.status];
-                const actualProgressLabel = progressStageLabel(program);
+              {filteredPrograms.map((program) => {
+                const dateDisplay = programDateDisplay(program.intake_data);
+                const structuredDateDisplay =
+                  dateDisplay &&
+                  /^\d{4}-\d{2}-\d{2}(?: ~ \d{4}-\d{2}-\d{2})?$/.test(dateDisplay)
+                    ? dateDisplay
+                    : null;
+                const legacyDate = structuredDateDisplay ? null : programDate(program);
                 return (
                   <tr key={program.id}>
                     <td>
@@ -252,20 +290,17 @@ export function DashboardPage() {
                     </td>
                     <td>{program.business_unit}</td>
                     <td>
-                      {storedStatusLabel}
-                      {actualProgressLabel !== storedStatusLabel ? (
-                        <span className="field-hint"> · 실제 진행: {actualProgressLabel}</span>
-                      ) : null}
+                      <span className="status-badge">{STATUS_LABELS[program.status]}</span>
                     </td>
-                    <td>{[programDate, programTime].filter(Boolean).join(' ') || '미입력'}</td>
+                    <td>
+                      {structuredDateDisplay ??
+                        (legacyDate ? formatIsoDate(legacyDate) : '미입력')}
+                    </td>
                     <td>
                       {program.applicant_count}명 / {program.participant_count}명
                     </td>
                     <td>
                       <ProgramProgress program={program} />
-                    </td>
-                    <td>
-                      <Link to={`/programs/${program.id}`}>상세 →</Link>
                     </td>
                   </tr>
                 );

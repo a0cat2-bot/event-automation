@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>EHS Letter</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 800px;
+    background: #eef1f6;
+    font-family: "Noto Sans KR", "Apple SD Gothic Neo", Arial, sans-serif;
+  }
+  .letter {
+    position: relative;
+    width: 800px;
+    min-height: 1120px;
+    margin: 0 auto;
+    background: #ffffff;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .letter-header {
+    position: relative;
+    background: __BRAND_COLOR__;
+    color: #ffffff;
+    padding: 48px 64px 64px;
+    text-align: center;
+  }
+  .letter-category {
+    font-size: 15px;
+    letter-spacing: 0.08em;
+    opacity: 0.85;
+    margin: 0 0 12px;
+  }
+  .letter-title {
+    font-size: 30px;
+    font-weight: 700;
+    margin: 0;
+    line-height: 1.35;
+  }
+  .letter-character {
+    position: absolute;
+    top: 24px;
+    right: 32px;
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+  .letter-character img {
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+  .letter-body {
+    flex: 1;
+    padding: 56px 64px 40px;
+    color: #1f2937;
+    font-size: 16px;
+    line-height: 1.7;
+  }
+  .letter-datetime {
+    background: #f4f6fb;
+    border: 1px solid #e1e6f0;
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin: 0 0 28px;
+    font-weight: 600;
+    color: #1f3a8a;
+    font-size: 15px;
+  }
+  .letter-text {
+    white-space: pre-wrap;
+    margin: 0 0 28px;
+  }
+  .letter-gift {
+    background: #fff7e6;
+    border: 1px solid #ffe1a8;
+    border-radius: 10px;
+    padding: 18px 22px;
+    margin: 0 0 28px;
+    font-size: 15px;
+    color: #7a4a00;
+  }
+  .letter-gift strong { display: block; margin-bottom: 6px; font-size: 14px; color: #a66a00; }
+  .letter-precautions {
+    background: #f8f9fb;
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 0 0 28px;
+    font-size: 14px;
+    color: #4b5563;
+  }
+  .letter-precautions strong { display: block; margin-bottom: 10px; color: #374151; font-size: 14px; }
+  .letter-precautions ul { margin: 0; padding-left: 18px; }
+  .letter-precautions li { margin-bottom: 6px; }
+  .letter-cta {
+    text-align: center;
+    margin: 8px 0 0;
+  }
+  .letter-cta a {
+    display: inline-block;
+    background: __BRAND_COLOR__;
+    color: #ffffff;
+    text-decoration: none;
+    font-weight: 700;
+    font-size: 15px;
+    padding: 14px 36px;
+    border-radius: 999px;
+  }
+  .letter-footer {
+    padding: 20px 24px;
+    text-align: center;
+    font-size: 12px;
+    color: #9aa2b1;
+    border-top: 1px solid #edf0f5;
+  }
+</style>
+</head>
+<body>
+  <div class="letter">
+    <div class="letter-header">
+      __CHARACTER_BLOCK__
+      <p class="letter-category">__CATEGORY_LABEL__</p>
+      <h1 class="letter-title">__PROGRAM_NAME__</h1>
+    </div>
+    <div class="letter-body">
+      __DATETIME_BLOCK__
+      <p class="letter-text">__BODY_TEXT__</p>
+      __GIFT_BLOCK__
+      __PRECAUTIONS_BLOCK__
+      __CTA_BLOCK__
+    </div>
+    <div class="letter-footer">__ORG_NAME__</div>
+  </div>
+</body>
+</html>

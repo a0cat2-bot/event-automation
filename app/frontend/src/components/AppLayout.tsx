@@ -1,5 +1,55 @@
-import { useEffect, useState } from 'react';
-import { NavLink, Outlet } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
+
+const ADMIN_LINKS = [
+  { to: '/letter-templates', label: '레터 템플릿' },
+  { to: '/business-units', label: '사업부 관리' },
+  { to: '/org-settings', label: '조직 설정' },
+  { to: '/audit-logs', label: '작업 히스토리' },
+];
+
+function AdminMenu() {
+  const location = useLocation();
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const isActive = ADMIN_LINKS.some((link) => location.pathname.startsWith(link.to));
+
+  useEffect(() => {
+    function handleOutsideClick(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, []);
+
+  useEffect(() => {
+    setIsOpen(false);
+  }, [location.pathname]);
+
+  return (
+    <div className="admin-menu" ref={containerRef}>
+      <button
+        type="button"
+        className={isActive ? 'active' : undefined}
+        aria-expanded={isOpen}
+        onClick={() => setIsOpen((open) => !open)}
+      >
+        관리 {isOpen ? '▲' : '▼'}
+      </button>
+      {isOpen ? (
+        <div className="admin-menu__panel">
+          {ADMIN_LINKS.map((link) => (
+            <NavLink key={link.to} to={link.to}>
+              {link.label}
+            </NavLink>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
 
 export function AppLayout() {
   const [actorName, setActorName] = useState('');
@@ -23,12 +73,9 @@ export function AppLayout() {
         <div className="header-controls">
           <nav aria-label="주요 메뉴">
             <NavLink end to="/">
-              대시보드
+              프로그램
             </NavLink>
-            <NavLink to="/programs/new">새 프로그램</NavLink>
-            <NavLink to="/letter-templates">레터 템플릿</NavLink>
-            <NavLink to="/org-settings">조직 설정</NavLink>
-            <NavLink to="/audit-logs">감사 로그</NavLink>
+            <AdminMenu />
           </nav>
           <label className="actor-name-field">
             작업자:

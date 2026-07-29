@@ -10,6 +10,7 @@ import {
   type SelectedParticipant,
 } from '../api/selection';
 import { PageShell } from '../components/PageShell';
+import { ProgramContextBar } from '../components/ProgramContextBar';
 import { formatDateTime } from '../utils/format';
 
 export function ApplicantReviewSelectionPage() {
@@ -88,17 +89,12 @@ export function ApplicantReviewSelectionPage() {
   }
 
   // The backend keeps (rather than deletes) a participant row with recorded survey results or
-  // gift selections when excluded, so history isn't lost — this just surfaces that up front
-  // instead of leaving the coordinator to guess why an excluded person still has old records.
-  function historyPreservedNote(applicantId: string): string | null {
+  // gift selections when excluded, so history isn't lost — the section description explains this
+  // once; per row we only need to flag WHO it applies to, not repeat the full sentence each time.
+  function hasPreservedHistory(applicantId: string): boolean {
     const participant = participantsByApplicantId.get(applicantId);
-    if (!participant) return null;
-    const hasSurvey = participant.survey_status === 'completed';
-    const hasGift = participant.gift_status !== 'not_selected';
-    if (hasSurvey && hasGift) return '설문 응답과 상품 수령 기록은 제외 후에도 보존됩니다.';
-    if (hasSurvey) return '설문 응답 기록은 제외 후에도 보존됩니다.';
-    if (hasGift) return '상품 수령 기록은 제외 후에도 보존됩니다.';
-    return null;
+    if (!participant) return false;
+    return participant.survey_status === 'completed' || participant.gift_status !== 'not_selected';
   }
 
   function candidateReason(applicantId: string) {
@@ -226,6 +222,7 @@ export function ApplicantReviewSelectionPage() {
       }
       showStubNote={false}
     >
+      <ProgramContextBar programId={programId} />
       {isLoading ? <p className="state-message">불러오는 중입니다…</p> : null}
       {loadError ? (
         <p className="state-message state-message--error" role="alert">
@@ -406,7 +403,8 @@ export function ApplicantReviewSelectionPage() {
               <h2>선정 예정자 ({preview.length}명 확정 예정)</h2>
               <p>
                 받으면 안 되는 사람은 제외하세요. 정원만큼 다음 순위 신청자가 자동으로 채워집니다.
-                아직 저장되지 않았습니다.
+                아직 저장되지 않았습니다. 「이력 보존」 표시가 있는 사람은 설문 응답이나 상품 수령
+                기록이 있어, 제외해도 그 기록은 남습니다.
               </p>
             </div>
           </div>
@@ -427,7 +425,6 @@ export function ApplicantReviewSelectionPage() {
               <tbody>
                 {preview.map((candidate) => {
                   const applicant = applicantById(candidate.applicant_id);
-                  const historyNote = historyPreservedNote(candidate.applicant_id);
                   return (
                     <tr key={candidate.applicant_id}>
                       <td>{candidate.selection_rank}</td>
@@ -437,19 +434,19 @@ export function ApplicantReviewSelectionPage() {
                       <td>{applicant ? formatDateTime(applicant.applied_at) : null}</td>
                       <td>{candidate.selection_reason}</td>
                       <td>
-                        <button
-                          className="button button--quiet"
-                          type="button"
-                          disabled={isPreviewing}
-                          onClick={() => handleExclude(candidate.applicant_id)}
-                        >
-                          제외
-                        </button>
-                        {historyNote ? (
-                          <p className="field-hint" style={{ margin: '0.25rem 0 0' }}>
-                            {historyNote}
-                          </p>
-                        ) : null}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <button
+                            className="button button--quiet"
+                            type="button"
+                            disabled={isPreviewing}
+                            onClick={() => handleExclude(candidate.applicant_id)}
+                          >
+                            제외
+                          </button>
+                          {hasPreservedHistory(candidate.applicant_id) ? (
+                            <span className="progress-step progress-step--partial">이력 보존</span>
+                          ) : null}
+                        </div>
                       </td>
                     </tr>
                   );

@@ -22,6 +22,7 @@ import {
 } from '../api/applicants';
 import { getProgram, type Program, type SelectionMode } from '../api/programs';
 import { PageShell } from '../components/PageShell';
+import { ProgramContextBar } from '../components/ProgramContextBar';
 import { formatDateTime } from '../utils/format';
 
 const STATUS_LABELS: Record<PreviewResponse['rows'][number]['status'], string> = {
@@ -333,6 +334,7 @@ export function ApplicantUploadPage() {
       description="CSV 파일로 여러 신청자를 가져오거나 신청자를 직접 추가하고 수정합니다."
       showStubNote={false}
     >
+      <ProgramContextBar programId={programId} />
       <div className="content-card">
         <h2>CSV 파일 선택</h2>
         <p className="field-hint">

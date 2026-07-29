@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import { listParticipants, recordSurveyResult, type Participant } from '../api/participants';
 import { syncSallySurvey } from '../api/sally';
 import { PageShell } from '../components/PageShell';
+import { ProgramContextBar } from '../components/ProgramContextBar';
 
 const SURVEY_STATUS_LABELS: Record<Participant['survey_status'], string> = {
   not_sent: '미발송',
@@ -106,6 +107,7 @@ export function SurveyResultsPage() {
       description="선정된 참여자의 만족도 설문 결과를 확인하고 입력합니다."
       showStubNote={false}
     >
+      <ProgramContextBar programId={programId} />
       <div className="content-card">
         <h2>Sally 설문 동기화</h2>
         <p className="page-description">

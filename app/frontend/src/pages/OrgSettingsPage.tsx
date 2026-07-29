@@ -6,7 +6,7 @@ import {
   updateOrgSettings,
   uploadOrgSettingsCharacterImage,
 } from '../api/letterTemplates';
-import { listPrograms } from '../api/programs';
+import { listBusinessUnits } from '../api/businessUnits';
 import { PageShell } from '../components/PageShell';
 import { resolveBackendAssetUrl } from '../config/api';
 
@@ -31,17 +31,10 @@ export function OrgSettingsPage() {
     const controller = new AbortController();
     let isCurrent = true;
 
-    listPrograms(controller.signal)
-      .then(({ programs }) => {
+    listBusinessUnits({ activeOnly: true }, controller.signal)
+      .then(({ business_units: nextBusinessUnits }) => {
         if (!isCurrent) return;
-        const units = [
-          ...new Set(
-            programs
-              .map((program) => program.business_unit.trim())
-              .filter((businessUnit) => businessUnit.length > 0),
-          ),
-        ].sort((left, right) => left.localeCompare(right, 'ko'));
-        setBusinessUnits(units);
+        setBusinessUnits(nextBusinessUnits.map((businessUnit) => businessUnit.name));
         setBusinessUnitError(null);
       })
       .catch((error: unknown) => {

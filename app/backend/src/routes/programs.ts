@@ -6,6 +6,7 @@ import { pool } from '../db/pool.js';
 import { validate } from '../middleware/validate.js';
 import { idParams } from '../schemas/common.js';
 import { programCreateBody, programUpdateBody } from '../schemas/contracts.js';
+import { getActorName } from '../utils/actor.js';
 
 interface ProgramRow {
   id: string;
@@ -46,8 +47,19 @@ const programCountColumns = `
        EXISTS(SELECT 1 FROM results_reports rr WHERE rr.program_id = p.id) AS has_report`;
 
 const programWithCountsSelect = `SELECT p.*,
+       bu.name AS business_unit,
 ${programCountColumns}
-FROM programs p`;
+FROM programs p
+JOIN business_units bu ON bu.id = p.business_unit_id`;
+
+function isForeignKeyViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    (error as { code?: unknown }).code === '23503'
+  );
+}
 
 export const programsRouter = Router();
 
@@ -60,7 +72,7 @@ programsRouter.post(
       const result = await pool.query<ProgramRow>(
         `WITH inserted_program AS (
            INSERT INTO programs
-             (id, name, business_unit, intake_data, template_version_id, selection_mode,
+             (id, name, business_unit_id, intake_data, template_version_id, selection_mode,
               max_participants, requires_approval, status, created_by)
            VALUES
              ($1, $2, $3, $4::jsonb, $5, $6::selection_mode, $7,
@@ -69,17 +81,19 @@ programsRouter.post(
            RETURNING *
          )
          SELECT p.*,
+                bu.name AS business_unit,
                 0::int AS applicant_count,
                 0::int AS participant_count,
                 0::int AS notified_count,
                 0::int AS survey_completed_count,
                 0::int AS gift_recipient_count,
                 FALSE AS has_report
-         FROM inserted_program p`,
+         FROM inserted_program p
+         JOIN business_units bu ON bu.id = p.business_unit_id`,
         [
           randomUUID(),
           program.name,
-          program.business_unit,
+          program.business_unit_id,
           program.intake_data === undefined ? null : JSON.stringify(program.intake_data),
           program.template_version_id ?? null,
           program.selection_mode,
@@ -91,6 +105,10 @@ programsRouter.post(
 
       response.status(201).json({ program: result.rows[0] });
     } catch (error) {
+      if (isForeignKeyViolation(error)) {
+        response.status(400).json({ error: '존재하지 않는 사업부입니다.' });
+        return;
+      }
       next(error);
     }
   },
@@ -131,7 +149,7 @@ programsRouter.put(
         `WITH updated_program AS (
            UPDATE programs
            SET name = COALESCE($2, name),
-               business_unit = COALESCE($3, business_unit),
+               business_unit_id = COALESCE($3::uuid, business_unit_id),
                intake_data = COALESCE($4::jsonb, intake_data),
                template_version_id = COALESCE($5::uuid, template_version_id),
                selection_mode = COALESCE($6::selection_mode, selection_mode),
@@ -144,12 +162,14 @@ programsRouter.put(
            RETURNING *
          )
          SELECT p.*,
+                bu.name AS business_unit,
 ${programCountColumns}
-         FROM updated_program p`,
+         FROM updated_program p
+         JOIN business_units bu ON bu.id = p.business_unit_id`,
         [
           request.params.id,
           program.name ?? null,
-          program.business_unit ?? null,
+          program.business_unit_id ?? null,
           program.intake_data === undefined ? null : JSON.stringify(program.intake_data),
           program.template_version_id ?? null,
           program.selection_mode ?? null,
@@ -166,6 +186,10 @@ ${programCountColumns}
 
       response.json({ program: updatedProgram });
     } catch (error) {
+      if (isForeignKeyViolation(error)) {
+        response.status(400).json({ error: '존재하지 않는 사업부입니다.' });
+        return;
+      }
       next(error);
     }
   },
@@ -181,6 +205,38 @@ programsRouter.get(
        ORDER BY p.created_at DESC`,
       );
       response.json({ programs: result.rows });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+programsRouter.delete(
+  '/programs/:id',
+  validate({ params: idParams }),
+  async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const result = await pool.query<{ id: string }>(
+        `UPDATE programs
+         SET deleted_at = NOW()
+         WHERE id = $1
+           AND deleted_at IS NULL
+         RETURNING id`,
+        [request.params.id],
+      );
+      if (!result.rows[0]) {
+        response.status(404).json({ error: 'Program not found' });
+        return;
+      }
+
+      await pool.query(
+        `INSERT INTO audit_logs
+           (actor_name, action, entity_type, entity_id, program_id, details, ip_address)
+         VALUES ($1, 'program_deleted', 'program', $2, $2, '{}'::jsonb, $3)`,
+        [getActorName(request), request.params.id, request.ip || null],
+      );
+
+      response.status(200).json({ deleted: true });
     } catch (error) {
       next(error);
     }

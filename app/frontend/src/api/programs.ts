@@ -11,6 +11,7 @@ export type SelectionMode = (typeof SELECTION_MODES)[number]['value'];
 export type Program = {
   id: string;
   name: string;
+  business_unit_id: string;
   business_unit: string;
   intake_data: Record<string, unknown> | null;
   template_version_id: string | null;
@@ -35,7 +36,7 @@ type ProgramsResponse = { programs: Program[] };
 
 export type CreateProgramInput = {
   name: string;
-  business_unit: string;
+  business_unit_id: string;
   selection_mode: SelectionMode;
   max_participants: number;
   requires_approval?: boolean;
@@ -70,5 +71,11 @@ export function updateProgram(
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(input),
+  });
+}
+
+export function deleteProgram(programId: string): Promise<{ deleted: boolean }> {
+  return apiRequest<{ deleted: boolean }>(`/programs/${encodeURIComponent(programId)}`, {
+    method: 'DELETE',
   });
 }

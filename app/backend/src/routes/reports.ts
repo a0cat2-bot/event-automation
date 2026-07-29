@@ -302,10 +302,11 @@ reportsRouter.post(
       const { format, include_sections: includeSections } = reportGenerateBody.parse(request.body);
 
       const programResult = await pool.query<ReportProgramRow>(
-        `SELECT id, name, business_unit, selection_mode
-         FROM programs
-         WHERE id = $1
-           AND deleted_at IS NULL
+        `SELECT p.id, p.name, bu.name AS business_unit, p.selection_mode
+         FROM programs p
+         JOIN business_units bu ON bu.id = p.business_unit_id
+         WHERE p.id = $1
+           AND p.deleted_at IS NULL
          LIMIT 1`,
         [programId],
       );

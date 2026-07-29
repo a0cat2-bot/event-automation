@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 
-import { getProgram, type Program } from '../api/programs';
+import { deleteProgram, getProgram, type Program } from '../api/programs';
 import { PageShell } from '../components/PageShell';
+import { programDateDisplay } from '../utils/program';
 
 const SELECTION_MODE_LABELS: Record<Program['selection_mode'], string> = {
   first_come_first_served: '선착순',
@@ -24,10 +25,31 @@ function intakeField(intakeData: Program['intake_data'], key: string): string | 
 
 export function ProgramDetailPage() {
   const { programId = '' } = useParams();
+  const navigate = useNavigate();
   const base = `/programs/${programId}`;
   const [program, setProgram] = useState<Program | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  async function handleDelete() {
+    if (!program) return;
+    const confirmed = window.confirm(
+      `"${program.name}" 프로그램을 삭제할까요? 목록에서 사라지며 되돌리려면 관리자에게 문의해야 합니다.`,
+    );
+    if (!confirmed) return;
+
+    setIsDeleting(true);
+    setDeleteError(null);
+    try {
+      await deleteProgram(programId);
+      navigate('/');
+    } catch (error) {
+      setDeleteError(error instanceof Error ? error.message : '프로그램을 삭제하지 못했습니다.');
+      setIsDeleting(false);
+    }
+  }
 
   useEffect(() => {
     const controller = new AbortController();
@@ -54,7 +76,7 @@ export function ProgramDetailPage() {
     };
   }, [programId]);
 
-  const programDate = program ? intakeField(program.intake_data, 'program_date') : null;
+  const programDate = program ? programDateDisplay(program.intake_data) : null;
   const programTime = program ? intakeField(program.intake_data, 'program_time') : null;
   const programLocation = program ? intakeField(program.intake_data, 'program_location') : null;
   const description = program ? intakeField(program.intake_data, 'description') : null;
@@ -78,6 +100,32 @@ export function ProgramDetailPage() {
 
       {program ? (
         <>
+          <div className="standard-save-row" style={{ marginBottom: '1.5rem' }}>
+            <Link className="button button--secondary" to={`${base}/edit`}>
+              프로그램 정보 수정
+            </Link>
+            <Link
+              className="button button--secondary"
+              to={`/programs/new?cloneFrom=${programId}`}
+            >
+              프로그램 복제
+            </Link>
+            <button
+              className="button button--danger"
+              type="button"
+              onClick={handleDelete}
+              disabled={isDeleting}
+              style={{ width: 'auto' }}
+            >
+              {isDeleting ? '삭제 중…' : '프로그램 삭제'}
+            </button>
+          </div>
+          {deleteError ? (
+            <p className="form-error" role="alert">
+              {deleteError}
+            </p>
+          ) : null}
+
           <div className="placeholder-grid">
             <article>
               <h2>최대 참여 인원</h2>
@@ -111,7 +159,7 @@ export function ProgramDetailPage() {
       ) : null}
 
       <nav className="workflow-links" aria-label="프로그램 진행 단계">
-        <Link to={`${base}/letters`}>레터 초안</Link>
+        <Link to={`${base}/letters`}>레터 미리보기/발송 준비</Link>
         <Link to={`${base}/applicants/upload`}>신청자 업로드</Link>
         <Link to={`${base}/selection`}>참여자 선정</Link>
         <Link to={`${base}/notifications`}>안내메일 발송</Link>

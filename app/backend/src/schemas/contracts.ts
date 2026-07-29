@@ -4,7 +4,7 @@ export const selectionMode = z.enum(['first_come_first_served', 'score', 'writte
 
 export const programCreateBody = z.object({
   name: z.string().min(1).max(255),
-  business_unit: z.string().min(1).max(100),
+  business_unit_id: z.string().uuid(),
   intake_data: z.record(z.unknown()).optional(),
   template_version_id: z.string().uuid().optional(),
   selection_mode: selectionMode,
@@ -17,6 +17,19 @@ export const programCreateBody = z.object({
 
 export const programUpdateBody = programCreateBody
   .partial()
+  .refine((body) => Object.keys(body).length > 0, {
+    message: 'At least one field must be supplied',
+  });
+
+export const businessUnitCreateBody = z.object({
+  name: z.string().trim().min(1).max(100),
+});
+
+export const businessUnitUpdateBody = z
+  .object({
+    name: z.string().trim().min(1).max(100).optional(),
+    is_active: z.boolean().optional(),
+  })
   .refine((body) => Object.keys(body).length > 0, {
     message: 'At least one field must be supplied',
   });
@@ -66,15 +79,14 @@ export const letterTemplateCreateBody = z
         message: 'category_id is required when layout_mode is standard',
       });
     }
-
-    if (body.layout_mode !== 'standard' && body.category_id) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ['category_id'],
-        message: 'category_id is only allowed when layout_mode is standard',
-      });
-    }
   });
+
+// A freeform template's category is optional and purely an audience-targeting tag (which
+// letter_categories row it maps to) — it doesn't drive the structured content-field
+// requirements that standard-layout templates get from the same column.
+export const letterTemplateCategoryUpdateBody = z.object({
+  category_id: z.string().uuid().nullable(),
+});
 
 const optionalNullableString = (maxLength: number) =>
   z.string().trim().max(maxLength).nullable().optional();

@@ -20,6 +20,16 @@ function templateTypeLabel(value: string) {
   return TEMPLATE_TYPES.find((option) => option.value === value)?.label ?? value;
 }
 
+// The category (미당첨 안내, 당첨 안내, ...) is far more specific than template_type — almost
+// every notification-stage template shares template_type 'notification', so showing only that
+// made every row read as "선정 결과 안내" regardless of what the letter actually is.
+function typeLabelFor(template: LetterTemplate, categories: LetterCategory[]) {
+  const category = template.category_id
+    ? categories.find((candidate) => candidate.id === template.category_id)
+    : undefined;
+  return category?.display_name ?? templateTypeLabel(template.template_type);
+}
+
 export function LetterTemplateListPage() {
   const navigate = useNavigate();
   const [templates, setTemplates] = useState<LetterTemplate[]>([]);
@@ -142,7 +152,7 @@ export function LetterTemplateListPage() {
                   <div>
                     <strong>{template.name}</strong>
                     <p>
-                      {templateTypeLabel(template.template_type)} · {template.brand_variant}
+                      {typeLabelFor(template, categories)} · {template.brand_variant}
                     </p>
                   </div>
                   <span aria-hidden="true">편집 →</span>

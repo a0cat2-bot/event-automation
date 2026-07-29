@@ -9,8 +9,11 @@ import {
   type LetterFieldKey,
   type LetterTemplate,
   type OrgSettings,
+  type ProgramLetterCustomization,
   type StandardContent,
+  resetProgramLetterContent,
   updateLetterTemplateStandardContent,
+  updateProgramLetterStandardContent,
 } from '../api/letterTemplates';
 import { PageShell } from '../components/PageShell';
 import { resolveBackendAssetUrl } from '../config/api';
@@ -58,12 +61,23 @@ function previewWithMergeFields(value: string) {
   });
 }
 
-export function StandardTemplateEditor({ template }: { template: LetterTemplate }) {
+export function StandardTemplateEditor({
+  template,
+  programId,
+  customization,
+  isCustomized = false,
+}: {
+  template: LetterTemplate;
+  programId?: string;
+  customization?: ProgramLetterCustomization | null;
+  isCustomized?: boolean;
+}) {
   const [category, setCategory] = useState<LetterCategory | null>(null);
   const [orgSettings, setOrgSettings] = useState<OrgSettings | null>(null);
   const [content, setContent] = useState<StandardContent>(
-    template.standard_content ?? EMPTY_STANDARD_CONTENT,
+    customization?.standard_content ?? template.standard_content ?? EMPTY_STANDARD_CONTENT,
   );
+  const [isProgramCustomized, setIsProgramCustomized] = useState(isCustomized);
   const [previewProgramName, setPreviewProgramName] = useState('프로그램명 예시');
   const [isLoadingCategory, setIsLoadingCategory] = useState(true);
   const [categoryError, setCategoryError] = useState<string | null>(null);
@@ -71,6 +85,7 @@ export function StandardTemplateEditor({ template }: { template: LetterTemplate 
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [isResetting, setIsResetting] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -150,16 +165,46 @@ export function StandardTemplateEditor({ template }: { template: LetterTemplate 
     setSaveMessage(null);
     setSaveError(null);
     try {
-      const { template: nextTemplate } = await updateLetterTemplateStandardContent(
-        String(template.id),
-        nextContent,
-      );
-      setContent(nextTemplate.standard_content ?? nextContent);
+      if (programId) {
+        const { customization: nextCustomization } = await updateProgramLetterStandardContent(
+          programId,
+          String(template.id),
+          nextContent,
+        );
+        setContent(nextCustomization.standard_content ?? nextContent);
+        setIsProgramCustomized(true);
+      } else {
+        const { template: nextTemplate } = await updateLetterTemplateStandardContent(
+          String(template.id),
+          nextContent,
+        );
+        setContent(nextTemplate.standard_content ?? nextContent);
+      }
       setSaveMessage('저장되었습니다.');
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : '표준 템플릿을 저장하지 못했습니다.');
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleReset() {
+    if (!programId) return;
+    setIsResetting(true);
+    setSaveMessage(null);
+    setSaveError(null);
+    try {
+      const { template: defaultTemplate } = await resetProgramLetterContent(
+        programId,
+        String(template.id),
+      );
+      setContent(defaultTemplate.standard_content ?? EMPTY_STANDARD_CONTENT);
+      setIsProgramCustomized(false);
+      setSaveMessage('표준 템플릿으로 되돌렸습니다.');
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : '표준으로 되돌리지 못했습니다.');
+    } finally {
+      setIsResetting(false);
     }
   }
 
@@ -174,9 +219,29 @@ export function StandardTemplateEditor({ template }: { template: LetterTemplate 
       showStubNote={false}
     >
       <div className="editor-topbar">
-        <Link className="back-link" to="/letter-templates">
-          ← 템플릿 목록
+        <Link
+          className="back-link"
+          to={programId ? `/programs/${programId}/letters` : '/letter-templates'}
+        >
+          {programId ? '← 레터 미리보기로' : '← 템플릿 목록'}
         </Link>
+        {programId ? (
+          <div className="editor-actions">
+            <span className="status-badge">
+              {isProgramCustomized ? '이 프로그램 전용으로 수정됨' : '표준 템플릿 사용 중'}
+            </span>
+            {isProgramCustomized ? (
+              <button
+                className="button button--quiet"
+                type="button"
+                disabled={isResetting}
+                onClick={handleReset}
+              >
+                {isResetting ? '되돌리는 중…' : '표준으로 되돌리기'}
+              </button>
+            ) : null}
+          </div>
+        ) : null}
       </div>
 
       {isLoadingCategory ? (

@@ -79,10 +79,22 @@ export type LetterTemplate = {
   layout_mode: 'freeform' | 'standard';
   category_id: string | null;
   standard_content: StandardContent | null;
+  is_customized?: boolean;
+};
+
+export type ProgramLetterCustomization = {
+  standard_content: StandardContent | null;
+  text_fields: TextField[] | null;
+  background_image_url: string | null;
+  canvas_width: number | null;
+  canvas_height: number | null;
 };
 
 type TemplateResponse = { template: LetterTemplate };
 type TemplatesResponse = { templates: LetterTemplate[] };
+type ProgramLetterCustomizationResponse = {
+  customization: ProgramLetterCustomization;
+};
 type CategoriesResponse = { categories: LetterCategory[] };
 type OrgSettingsResponse = { org_settings: OrgSettings };
 
@@ -90,8 +102,14 @@ function orgSettingsPath(suffix: string, businessUnit: string): string {
   return `/org-settings${suffix}?business_unit=${encodeURIComponent(businessUnit)}`;
 }
 
-export function getLetterTemplates(signal?: AbortSignal): Promise<TemplatesResponse> {
-  return apiRequest<TemplatesResponse>('/letter-templates', { signal });
+export function getLetterTemplates(
+  signal?: AbortSignal,
+  programId?: string,
+): Promise<TemplatesResponse> {
+  const path = programId
+    ? `/letter-templates?program_id=${encodeURIComponent(programId)}`
+    : '/letter-templates';
+  return apiRequest<TemplatesResponse>(path, { signal });
 }
 
 export function getLetterTemplate(
@@ -151,6 +169,20 @@ export function getLetterCategories(signal?: AbortSignal): Promise<CategoriesRes
   return apiRequest<CategoriesResponse>('/letter-categories', { signal });
 }
 
+export function updateLetterTemplateCategory(
+  templateId: string,
+  categoryId: string | null,
+): Promise<TemplateResponse> {
+  return apiRequest<TemplateResponse>(
+    `/letter-templates/${encodeURIComponent(templateId)}/category`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ category_id: categoryId }),
+    },
+  );
+}
+
 export function updateLetterTemplateStandardContent(
   templateId: string,
   content: StandardContent,
@@ -162,6 +194,85 @@ export function updateLetterTemplateStandardContent(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(content),
     },
+  );
+}
+
+export function getProgramLetterContent(
+  programId: string,
+  templateId: string,
+  signal?: AbortSignal,
+): Promise<{
+  template: LetterTemplate;
+  customization: ProgramLetterCustomization | null;
+  is_customized: boolean;
+}> {
+  return apiRequest(
+    `/programs/${encodeURIComponent(programId)}/letter-templates/${encodeURIComponent(templateId)}/content`,
+    { signal },
+  );
+}
+
+export function updateProgramLetterStandardContent(
+  programId: string,
+  templateId: string,
+  content: StandardContent,
+): Promise<ProgramLetterCustomizationResponse> {
+  return apiRequest<ProgramLetterCustomizationResponse>(
+    `/programs/${encodeURIComponent(programId)}/letter-templates/${encodeURIComponent(templateId)}/content`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(content),
+    },
+  );
+}
+
+export function updateProgramLetterFields(
+  programId: string,
+  templateId: string,
+  textFields: TextField[],
+): Promise<ProgramLetterCustomizationResponse> {
+  return apiRequest<ProgramLetterCustomizationResponse>(
+    `/programs/${encodeURIComponent(programId)}/letter-templates/${encodeURIComponent(templateId)}/fields`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text_fields: textFields }),
+    },
+  );
+}
+
+export function uploadProgramLetterBackground(
+  programId: string,
+  templateId: string,
+  image: File,
+): Promise<ProgramLetterCustomizationResponse> {
+  const body = new FormData();
+  body.append('image', image);
+
+  return apiRequest<ProgramLetterCustomizationResponse>(
+    `/programs/${encodeURIComponent(programId)}/letter-templates/${encodeURIComponent(templateId)}/background`,
+    { method: 'POST', body },
+  );
+}
+
+export function resetProgramLetterContent(
+  programId: string,
+  templateId: string,
+): Promise<{ template: LetterTemplate; deleted: boolean }> {
+  return apiRequest(
+    `/programs/${encodeURIComponent(programId)}/letter-templates/${encodeURIComponent(templateId)}/content`,
+    { method: 'DELETE' },
+  );
+}
+
+export function cloneProgramLetterCustomizations(
+  newProgramId: string,
+  sourceProgramId: string,
+): Promise<{ cloned_count: number }> {
+  return apiRequest(
+    `/programs/${encodeURIComponent(newProgramId)}/letter-customizations/clone-from/${encodeURIComponent(sourceProgramId)}`,
+    { method: 'POST' },
   );
 }
 

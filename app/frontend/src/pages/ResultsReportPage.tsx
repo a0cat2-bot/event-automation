@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 
 import { generateReport, type Report } from '../api/reports';
 import { PageShell } from '../components/PageShell';
+import { ProgramContextBar } from '../components/ProgramContextBar';
 import { resolveBackendAssetUrl } from '../config/api';
 
 const SECTION_OPTIONS = [
@@ -50,6 +51,7 @@ export function ResultsReportPage() {
       description="프로그램 진행 결과를 요약한 보고서를 생성합니다."
       showStubNote={false}
     >
+      <ProgramContextBar programId={programId} />
       <div className="content-card">
         <label>
           형식

@@ -56,7 +56,7 @@ export function AuditLogPage() {
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
         if (!isCurrent) return;
-        setLoadError(error instanceof Error ? error.message : '감사 로그를 불러오지 못했습니다.');
+        setLoadError(error instanceof Error ? error.message : '작업 히스토리를 불러오지 못했습니다.');
       })
       .finally(() => {
         if (isCurrent) setIsLoading(false);
@@ -75,9 +75,9 @@ export function AuditLogPage() {
 
   return (
     <PageShell
-      title="감사 로그"
+      title="작업 히스토리"
       description="프로그램 작업 이력을 최근 순으로 최대 200건까지 확인합니다."
-      designSection="감사 로그"
+      designSection="작업 히스토리"
       showStubNote={false}
     >
       <section className="content-card audit-log-card" aria-labelledby="audit-log-list-title">
@@ -109,7 +109,7 @@ export function AuditLogPage() {
           </select>
         </label>
 
-        {isLoading ? <p className="state-message">감사 로그를 불러오는 중입니다…</p> : null}
+        {isLoading ? <p className="state-message">작업 히스토리를 불러오는 중입니다…</p> : null}
         {loadError ? (
           <p className="state-message state-message--error" role="alert">
             {loadError}
@@ -117,7 +117,7 @@ export function AuditLogPage() {
         ) : null}
         {!isLoading && !loadError && entries.length === 0 ? (
           <div className="empty-state">
-            <strong>표시할 감사 로그가 없습니다.</strong>
+            <strong>표시할 작업 히스토리가 없습니다.</strong>
             <p>작업이 기록되면 이곳에 표시됩니다.</p>
           </div>
         ) : null}
@@ -137,8 +137,8 @@ export function AuditLogPage() {
               <tbody>
                 {entries.map((entry) => (
                   <tr key={entry.id}>
-                    <td>{formatDateTime(entry.timestamp)}</td>
-                    <td>{entry.actor_name ?? '—'}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{formatDateTime(entry.timestamp)}</td>
+                    <td style={{ whiteSpace: 'nowrap' }}>{entry.actor_name ?? '—'}</td>
                     <td>{entry.action ?? '—'}</td>
                     <td>
                       {[entry.entity_type, entry.entity_id].filter(Boolean).join(' · ') || '—'}

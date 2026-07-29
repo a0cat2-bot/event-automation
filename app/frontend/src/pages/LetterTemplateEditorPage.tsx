@@ -4,13 +4,21 @@ import { Group, Image as KonvaImage, Layer, Rect, Stage, Text } from 'react-konv
 import { Link, useParams } from 'react-router-dom';
 
 import {
+  getLetterCategories,
   getLetterTemplate,
+  getProgramLetterContent,
   LETTER_FIELD_KEYS,
+  type LetterCategory,
   type LetterFieldKey,
   type LetterTemplate,
+  type ProgramLetterCustomization,
   type TextField,
+  resetProgramLetterContent,
+  updateLetterTemplateCategory,
   updateLetterTemplateFields,
+  updateProgramLetterFields,
   uploadLetterTemplateBackground,
+  uploadProgramLetterBackground,
 } from '../api/letterTemplates';
 import { PageShell } from '../components/PageShell';
 import { resolveBackendAssetUrl } from '../config/api';
@@ -192,8 +200,12 @@ function CanvasSurface({
 }
 
 export function LetterTemplateEditorPage() {
-  const { id } = useParams<{ id: string }>();
+  const params = useParams<{ id?: string; programId?: string; templateId?: string }>();
+  const templateId = params.templateId ?? params.id;
+  const programId = params.programId;
   const [template, setTemplate] = useState<LetterTemplate | null>(null);
+  const [customization, setCustomization] = useState<ProgramLetterCustomization | null>(null);
+  const [isCustomized, setIsCustomized] = useState(false);
   const [fields, setFields] = useState<TextField[]>([]);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -206,9 +218,13 @@ export function LetterTemplateEditorPage() {
   const [isAddingField, setIsAddingField] = useState(false);
   const [newFieldKey, setNewFieldKey] = useState<LetterFieldKey>('static');
   const [newStaticText, setNewStaticText] = useState('프로그램 모집 안내');
+  const [categories, setCategories] = useState<LetterCategory[]>([]);
+  const [isSavingCategory, setIsSavingCategory] = useState(false);
+  const [categoryError, setCategoryError] = useState<string | null>(null);
+  const [isResetting, setIsResetting] = useState(false);
 
   useEffect(() => {
-    if (!id) {
+    if (!templateId) {
       setLoadError('템플릿 ID가 없습니다.');
       setIsLoading(false);
       return;
@@ -217,11 +233,28 @@ export function LetterTemplateEditorPage() {
     const controller = new AbortController();
     let isCurrent = true;
     setIsLoading(true);
-    getLetterTemplate(id, controller.signal)
-      .then(({ template: nextTemplate }) => {
+    getLetterTemplate(templateId, controller.signal)
+      .then(async ({ template: nextTemplate }) => {
+        const programContent = programId
+          ? await getProgramLetterContent(programId, templateId, controller.signal)
+          : null;
         if (!isCurrent) return;
-        setTemplate(nextTemplate);
-        setFields(nextTemplate.text_fields ?? []);
+        const nextCustomization = programContent?.customization ?? null;
+        const effectiveTemplate = nextCustomization
+          ? {
+              ...nextTemplate,
+              standard_content: nextCustomization.standard_content ?? nextTemplate.standard_content,
+              text_fields: nextCustomization.text_fields ?? nextTemplate.text_fields,
+              background_image_url:
+                nextCustomization.background_image_url ?? nextTemplate.background_image_url,
+              canvas_width: nextCustomization.canvas_width ?? nextTemplate.canvas_width,
+              canvas_height: nextCustomization.canvas_height ?? nextTemplate.canvas_height,
+            }
+          : nextTemplate;
+        setTemplate(effectiveTemplate);
+        setCustomization(nextCustomization);
+        setIsCustomized(programContent?.is_customized ?? false);
+        setFields(effectiveTemplate.text_fields ?? []);
         setLoadError(null);
       })
       .catch((error: unknown) => {
@@ -237,7 +270,38 @@ export function LetterTemplateEditorPage() {
       isCurrent = false;
       controller.abort();
     };
-  }, [id]);
+  }, [programId, templateId]);
+
+  useEffect(() => {
+    if (programId) {
+      setCategories([]);
+      return;
+    }
+    const controller = new AbortController();
+    getLetterCategories(controller.signal)
+      .then(({ categories: next }) => setCategories(next))
+      .catch(() => {
+        // Non-critical — the category selector just stays empty if this fails.
+      });
+    return () => controller.abort();
+  }, [programId]);
+
+  async function handleCategoryChange(nextCategoryId: string) {
+    if (!template) return;
+    setIsSavingCategory(true);
+    setCategoryError(null);
+    try {
+      const { template: updated } = await updateLetterTemplateCategory(
+        String(template.id),
+        nextCategoryId || null,
+      );
+      setTemplate(updated);
+    } catch (error) {
+      setCategoryError(error instanceof Error ? error.message : '분류를 저장하지 못했습니다.');
+    } finally {
+      setIsSavingCategory(false);
+    }
+  }
 
   const selectedField = useMemo(
     () => fields.find((field) => field.id === selectedFieldId) ?? null,
@@ -255,7 +319,7 @@ export function LetterTemplateEditorPage() {
   async function handleBackgroundUpload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = '';
-    if (!file || !id) return;
+    if (!file || !templateId) return;
 
     if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
       setUploadError('PNG, JPEG 또는 WebP 이미지만 업로드할 수 있습니다.');
@@ -265,9 +329,32 @@ export function LetterTemplateEditorPage() {
     setIsUploading(true);
     setUploadError(null);
     try {
-      const { template: nextTemplate } = await uploadLetterTemplateBackground(id, file);
-      setTemplate(nextTemplate);
-      setFields(nextTemplate.text_fields ?? fields);
+      if (programId) {
+        const { customization: nextCustomization } = await uploadProgramLetterBackground(
+          programId,
+          templateId,
+          file,
+        );
+        setCustomization(nextCustomization);
+        setIsCustomized(true);
+        setTemplate((current) =>
+          current
+            ? {
+                ...current,
+                background_image_url:
+                  nextCustomization.background_image_url ?? current.background_image_url,
+                canvas_width: nextCustomization.canvas_width ?? current.canvas_width,
+                canvas_height: nextCustomization.canvas_height ?? current.canvas_height,
+                text_fields: nextCustomization.text_fields ?? current.text_fields,
+              }
+            : current,
+        );
+        setFields(nextCustomization.text_fields ?? fields);
+      } else {
+        const { template: nextTemplate } = await uploadLetterTemplateBackground(templateId, file);
+        setTemplate(nextTemplate);
+        setFields(nextTemplate.text_fields ?? fields);
+      }
     } catch (error) {
       setUploadError(
         error instanceof Error ? error.message : '배경 이미지를 업로드하지 못했습니다.',
@@ -313,19 +400,62 @@ export function LetterTemplateEditorPage() {
   }
 
   async function handleSave() {
-    if (!id) return;
+    if (!templateId) return;
     setIsSaving(true);
     setSaveError(null);
     setSaveMessage(null);
     try {
-      const { template: nextTemplate } = await updateLetterTemplateFields(id, fields);
-      setTemplate(nextTemplate);
-      setFields(nextTemplate.text_fields ?? []);
+      if (programId) {
+        const { customization: nextCustomization } = await updateProgramLetterFields(
+          programId,
+          templateId,
+          fields,
+        );
+        setCustomization(nextCustomization);
+        setIsCustomized(true);
+        setTemplate((current) =>
+          current
+            ? {
+                ...current,
+                text_fields: nextCustomization.text_fields ?? fields,
+                background_image_url:
+                  nextCustomization.background_image_url ?? current.background_image_url,
+                canvas_width: nextCustomization.canvas_width ?? current.canvas_width,
+                canvas_height: nextCustomization.canvas_height ?? current.canvas_height,
+              }
+            : current,
+        );
+        setFields(nextCustomization.text_fields ?? fields);
+      } else {
+        const { template: nextTemplate } = await updateLetterTemplateFields(templateId, fields);
+        setTemplate(nextTemplate);
+        setFields(nextTemplate.text_fields ?? []);
+      }
       setSaveMessage('저장되었습니다.');
     } catch (error) {
       setSaveError(error instanceof Error ? error.message : '텍스트 필드를 저장하지 못했습니다.');
     } finally {
       setIsSaving(false);
+    }
+  }
+
+  async function handleReset() {
+    if (!programId || !templateId) return;
+    setIsResetting(true);
+    setSaveError(null);
+    setUploadError(null);
+    try {
+      const { template: defaultTemplate } = await resetProgramLetterContent(programId, templateId);
+      setTemplate(defaultTemplate);
+      setFields(defaultTemplate.text_fields ?? []);
+      setCustomization(null);
+      setIsCustomized(false);
+      setSelectedFieldId(null);
+      setSaveMessage('표준 템플릿으로 되돌렸습니다.');
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : '표준으로 되돌리지 못했습니다.');
+    } finally {
+      setIsResetting(false);
     }
   }
 
@@ -353,15 +483,25 @@ export function LetterTemplateEditorPage() {
         <p className="state-message state-message--error" role="alert">
           {loadError ?? '템플릿이 없습니다.'}
         </p>
-        <Link className="button button--secondary" to="/letter-templates">
-          템플릿 목록으로
+        <Link
+          className="button button--secondary"
+          to={programId ? `/programs/${programId}/letters` : '/letter-templates'}
+        >
+          {programId ? '레터 미리보기로' : '템플릿 목록으로'}
         </Link>
       </PageShell>
     );
   }
 
   if (template.layout_mode === 'standard') {
-    return <StandardTemplateEditor template={template} />;
+    return (
+      <StandardTemplateEditor
+        template={template}
+        programId={programId}
+        customization={customization}
+        isCustomized={isCustomized}
+      />
+    );
   }
 
   const hasCanvas = Boolean(
@@ -376,29 +516,80 @@ export function LetterTemplateEditorPage() {
       showStubNote={false}
     >
       <div className="editor-topbar">
-        <Link className="back-link" to="/letter-templates">
-          ← 템플릿 목록
+        <Link
+          className="back-link"
+          to={programId ? `/programs/${programId}/letters` : '/letter-templates'}
+        >
+          {programId ? '← 레터 미리보기로' : '← 템플릿 목록'}
         </Link>
-        {hasCanvas ? (
+        {programId || hasCanvas ? (
           <div className="editor-actions">
-            <button
-              className="button button--secondary"
-              type="button"
-              onClick={() => setIsAddingField((isOpen) => !isOpen)}
-            >
-              + 텍스트 추가
-            </button>
-            <button
-              className="button button--primary"
-              type="button"
-              disabled={isSaving}
-              onClick={handleSave}
-            >
-              {isSaving ? '저장 중…' : '저장'}
-            </button>
+            {programId ? (
+              <span className="status-badge">
+                {isCustomized ? '이 프로그램 전용으로 수정됨' : '표준 템플릿 사용 중'}
+              </span>
+            ) : null}
+            {programId && isCustomized ? (
+              <button
+                className="button button--quiet"
+                type="button"
+                disabled={isResetting}
+                onClick={handleReset}
+              >
+                {isResetting ? '되돌리는 중…' : '표준으로 되돌리기'}
+              </button>
+            ) : null}
+            {hasCanvas ? (
+              <>
+                <button
+                  className="button button--secondary"
+                  type="button"
+                  onClick={() => setIsAddingField((isOpen) => !isOpen)}
+                >
+                  + 텍스트 추가
+                </button>
+                <button
+                  className="button button--primary"
+                  type="button"
+                  disabled={isSaving}
+                  onClick={handleSave}
+                >
+                  {isSaving ? '저장 중…' : '저장'}
+                </button>
+              </>
+            ) : null}
           </div>
         ) : null}
       </div>
+
+      {!programId ? (
+        <div className="content-card" style={{ marginBottom: '1.5rem' }}>
+          <label>
+            발송 대상 분류 (선택)
+            <select
+              value={template.category_id ?? ''}
+              disabled={isSavingCategory}
+              onChange={(event) => handleCategoryChange(event.target.value)}
+            >
+              <option value="">선택 안 함 — 선정된 참여자 전체 대상</option>
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.display_name}
+                </option>
+              ))}
+            </select>
+            <small className="field-hint">
+              안내메일 발송 화면에서 누구에게 보낼 수 있는 템플릿인지 판단하는 데 쓰입니다. 예:
+              &ldquo;미당첨 안내&rdquo;로 지정하면 선정된 참여자에게는 발송 대상으로 뜨지 않습니다.
+            </small>
+          </label>
+          {categoryError ? (
+            <p className="form-error" role="alert">
+              {categoryError}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
 
       {!hasCanvas ? (
         <section className="background-upload-card">

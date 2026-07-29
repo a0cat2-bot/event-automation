@@ -1,43 +1,135 @@
-import { FormEvent, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { FormEvent, useEffect, useState } from 'react';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 
-import { createProgram, SELECTION_MODES, type SelectionMode } from '../api/programs';
+import { listBusinessUnits, type BusinessUnit } from '../api/businessUnits';
+import { cloneProgramLetterCustomizations } from '../api/letterTemplates';
+import {
+  createProgram,
+  getProgram,
+  SELECTION_MODES,
+  type Program,
+  type SelectionMode,
+} from '../api/programs';
 import { PageShell } from '../components/PageShell';
+import { intakeField } from '../utils/program';
+
+function getLocalDateString() {
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
 
 export function ProgramSetupPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const cloneFrom = searchParams.get('cloneFrom');
   const [name, setName] = useState('');
-  const [businessUnit, setBusinessUnit] = useState('');
+  const [businessUnits, setBusinessUnits] = useState<BusinessUnit[]>([]);
+  const [businessUnitId, setBusinessUnitId] = useState('');
+  const [isBusinessUnitLoading, setIsBusinessUnitLoading] = useState(true);
+  const [businessUnitError, setBusinessUnitError] = useState<string | null>(null);
   const [selectionMode, setSelectionMode] = useState<SelectionMode>('first_come_first_served');
   const [maxParticipants, setMaxParticipants] = useState('20');
   const [requiresApproval, setRequiresApproval] = useState(false);
-  const [programDate, setProgramDate] = useState('');
+  const [programStartDate, setProgramStartDate] = useState('');
+  const [programEndDate, setProgramEndDate] = useState('');
   const [programTime, setProgramTime] = useState('');
   const [programLocation, setProgramLocation] = useState('');
   const [description, setDescription] = useState('');
   const [isCreating, setIsCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const controller = new AbortController();
+    let isCurrent = true;
+
+    const sourceProgramPromise: Promise<Program | null> = cloneFrom
+      ? getProgram(cloneFrom, controller.signal)
+          .then(({ program }) => program)
+          .catch(() => null)
+      : Promise.resolve(null);
+
+    Promise.all([
+      listBusinessUnits({ activeOnly: true }, controller.signal),
+      sourceProgramPromise,
+    ])
+      .then(([{ business_units: nextBusinessUnits }, sourceProgram]) => {
+        if (!isCurrent) return;
+        setBusinessUnits(nextBusinessUnits);
+        setBusinessUnitId(
+          sourceProgram &&
+            nextBusinessUnits.some(
+              (businessUnit) => businessUnit.id === sourceProgram.business_unit_id,
+            )
+            ? sourceProgram.business_unit_id
+            : nextBusinessUnits[0]?.id || '',
+        );
+        if (sourceProgram) {
+          setName(`${sourceProgram.name} (복사본)`);
+          setSelectionMode(sourceProgram.selection_mode);
+          setMaxParticipants(String(sourceProgram.max_participants));
+          setRequiresApproval(sourceProgram.requires_approval);
+          setProgramLocation(intakeField(sourceProgram.intake_data, 'program_location') ?? '');
+          setDescription(intakeField(sourceProgram.intake_data, 'description') ?? '');
+        }
+        setBusinessUnitError(null);
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        if (!isCurrent) return;
+        setBusinessUnitError(
+          error instanceof Error ? error.message : '사업부 목록을 불러오지 못했습니다.',
+        );
+      })
+      .finally(() => {
+        if (isCurrent) setIsBusinessUnitLoading(false);
+      });
+
+    return () => {
+      isCurrent = false;
+      controller.abort();
+    };
+  }, [cloneFrom]);
+
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (
+      programStartDate &&
+      programEndDate &&
+      programEndDate < programStartDate
+    ) {
+      setCreateError('종료일은 시작일보다 빠를 수 없습니다.');
+      return;
+    }
+
     setIsCreating(true);
     setCreateError(null);
 
     try {
       const intakeData: Record<string, unknown> = {};
-      if (programDate.trim()) intakeData.program_date = programDate.trim();
+      if (programStartDate) {
+        intakeData.program_start_date = programStartDate;
+        if (programEndDate && programEndDate !== programStartDate) {
+          intakeData.program_end_date = programEndDate;
+        }
+      }
       if (programTime.trim()) intakeData.program_time = programTime.trim();
       if (programLocation.trim()) intakeData.program_location = programLocation.trim();
       if (description.trim()) intakeData.description = description.trim();
 
       const { program } = await createProgram({
         name: name.trim(),
-        business_unit: businessUnit.trim(),
+        business_unit_id: businessUnitId,
         selection_mode: selectionMode,
         max_participants: Number(maxParticipants),
         requires_approval: requiresApproval,
         ...(Object.keys(intakeData).length > 0 ? { intake_data: intakeData } : {}),
       });
+      if (cloneFrom) {
+        void cloneProgramLetterCustomizations(program.id, cloneFrom).catch(() => {});
+      }
       navigate(`/programs/${program.id}`);
     } catch (error) {
       setCreateError(error instanceof Error ? error.message : '프로그램을 만들지 못했습니다.');
@@ -66,13 +158,33 @@ export function ProgramSetupPage() {
 
         <label>
           주관 부서 / 사업부
-          <input
-            required
-            value={businessUnit}
-            onChange={(event) => setBusinessUnit(event.target.value)}
-            placeholder="예: AX센터 EHS그룹"
-          />
+          {isBusinessUnitLoading ? (
+            <span className="state-message">사업부를 불러오는 중입니다…</span>
+          ) : null}
+          {!isBusinessUnitLoading && businessUnits.length > 0 ? (
+            <select
+              required
+              value={businessUnitId}
+              onChange={(event) => setBusinessUnitId(event.target.value)}
+            >
+              {businessUnits.map((businessUnit) => (
+                <option key={businessUnit.id} value={businessUnit.id}>
+                  {businessUnit.name}
+                </option>
+              ))}
+            </select>
+          ) : null}
+          {!isBusinessUnitLoading && !businessUnitError && businessUnits.length === 0 ? (
+            <span className="empty-state">
+              사업부가 없습니다. 먼저 <Link to="/business-units">사업부를 등록하세요.</Link>
+            </span>
+          ) : null}
         </label>
+        {businessUnitError ? (
+          <p className="form-error" role="alert">
+            {businessUnitError}
+          </p>
+        ) : null}
 
         <label>
           선정 방식
@@ -115,11 +227,25 @@ export function ProgramSetupPage() {
         </label>
 
         <label>
-          날짜 (선택)
+          시작일 (선택)
           <input
-            value={programDate}
-            onChange={(event) => setProgramDate(event.target.value)}
-            placeholder="예: 2026년 8월 20일(목)"
+            type="date"
+            value={programStartDate}
+            onChange={(event) => setProgramStartDate(event.target.value)}
+          />
+          {programStartDate && programStartDate < getLocalDateString() ? (
+            <small className="field-hint field-hint--warning">
+              선택한 시작일이 오늘보다 이전입니다. 확인해주세요.
+            </small>
+          ) : null}
+        </label>
+
+        <label>
+          종료일 (선택, 여러 날 진행 시)
+          <input
+            type="date"
+            value={programEndDate}
+            onChange={(event) => setProgramEndDate(event.target.value)}
           />
         </label>
 
@@ -157,7 +283,11 @@ export function ProgramSetupPage() {
           </p>
         ) : null}
 
-        <button className="button button--primary" type="submit" disabled={isCreating}>
+        <button
+          className="button button--primary"
+          type="submit"
+          disabled={isCreating || isBusinessUnitLoading || !businessUnitId}
+        >
           {isCreating ? '생성 중…' : '프로그램 만들기'}
         </button>
       </form>
