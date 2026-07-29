@@ -159,7 +159,13 @@ export function BusinessUnitsPage() {
                       <tr>
                         <td>{businessUnit.name}</td>
                         <td>
-                          <span className="status-badge">
+                          <span
+                            className={
+                              businessUnit.is_active
+                                ? 'status-badge status-badge--success'
+                                : 'status-badge'
+                            }
+                          >
                             {businessUnit.is_active ? '활성' : '비활성'}
                           </span>
                         </td>

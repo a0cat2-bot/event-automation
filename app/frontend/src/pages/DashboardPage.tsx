@@ -12,6 +12,13 @@ const STATUS_LABELS: Record<Program['status'], string> = {
   completed: '종료',
 };
 
+const STATUS_BADGE_CLASS: Record<Program['status'], string> = {
+  planning: 'status-badge',
+  recruitment_active: 'status-badge status-badge--info',
+  selection_in_progress: 'status-badge status-badge--warning',
+  completed: 'status-badge status-badge--success',
+};
+
 type StepStatus = 'done' | 'partial' | 'pending';
 
 function intakeField(intakeData: Program['intake_data'], key: string): string | null {
@@ -290,7 +297,9 @@ export function DashboardPage() {
                     </td>
                     <td>{program.business_unit}</td>
                     <td>
-                      <span className="status-badge">{STATUS_LABELS[program.status]}</span>
+                      <span className={STATUS_BADGE_CLASS[program.status]}>
+                        {STATUS_LABELS[program.status]}
+                      </span>
                     </td>
                     <td>
                       {structuredDateDisplay ??

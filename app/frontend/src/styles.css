@@ -510,6 +510,21 @@ tbody tr:last-child td {
   white-space: nowrap;
 }
 
+.status-badge--info {
+  background: var(--primary-tint);
+  color: var(--primary-hover);
+}
+
+.status-badge--warning {
+  background: var(--warning-tint);
+  color: var(--warning);
+}
+
+.status-badge--success {
+  background: var(--success-tint);
+  color: var(--success);
+}
+
 .notification-row--expanded {
   background: var(--primary-tint);
 }
