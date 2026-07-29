@@ -134,6 +134,7 @@ export function ProgramEditPage() {
   return (
     <PageShell
       title="프로그램 수정"
+      designSection="프로그램 수정"
       description="프로그램 기본 정보를 수정합니다."
       showStubNote={false}
     >

@@ -112,6 +112,7 @@ export function LetterDraftsPage() {
   return (
     <PageShell
       title="레터 미리보기/발송 준비"
+      designSection="레터 미리보기/발송 준비"
       description={
         program
           ? `${program.name}의 레터 템플릿을 골라 실제 프로그램 정보(일시·장소·프로그램명·등록된 상품)로 채워진 초안을 미리 보고, 그대로 편집하거나 발송 화면으로 이동할 수 있습니다.`

@@ -48,6 +48,7 @@ export function ResultsReportPage() {
   return (
     <PageShell
       title="결과 보고서"
+      designSection="결과 보고서"
       description="프로그램 진행 결과를 요약한 보고서를 생성합니다."
       showStubNote={false}
     >

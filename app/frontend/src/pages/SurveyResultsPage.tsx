@@ -104,6 +104,7 @@ export function SurveyResultsPage() {
   return (
     <PageShell
       title="만족도 설문 결과"
+      designSection="만족도 설문 결과"
       description="선정된 참여자의 만족도 설문 결과를 확인하고 입력합니다."
       showStubNote={false}
     >

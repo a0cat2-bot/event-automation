@@ -175,6 +175,7 @@ export function SelectionReviewSurveySendingPage() {
   return (
     <PageShell
       title="안내메일 발송"
+      designSection="안내메일 발송"
       description="레터 유형별로 어디까지 발송했는지 확인하고, 펼쳐서 개별 또는 일괄로 발송합니다."
       showStubNote={false}
     >

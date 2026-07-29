@@ -185,6 +185,7 @@ export function DashboardPage() {
   return (
     <PageShell
       title="프로그램"
+      designSection="대시보드"
       description="진행 중인 프로그램과 다음 작업을 확인하세요."
       showStubNote={false}
     >

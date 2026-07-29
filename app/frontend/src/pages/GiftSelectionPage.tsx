@@ -150,6 +150,7 @@ export function GiftSelectionPage() {
   return (
     <PageShell
       title="상품 수령자 선정"
+      designSection="상품 수령자 선정"
       description="먼저 상품을 등록(이름/이미지/수량)한 뒤, 만족도 설문을 완료하고 기준 점수 이상인 참여자 중 무작위로 수령자를 선정합니다."
       showStubNote={false}
     >

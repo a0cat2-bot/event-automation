@@ -331,6 +331,7 @@ export function ApplicantUploadPage() {
   return (
     <PageShell
       title="신청자 업로드"
+      designSection="신청자 업로드"
       description="CSV 파일로 여러 신청자를 가져오거나 신청자를 직접 추가하고 수정합니다."
       showStubNote={false}
     >

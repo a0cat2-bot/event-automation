@@ -215,6 +215,7 @@ export function ApplicantReviewSelectionPage() {
   return (
     <PageShell
       title="참여자 선정"
+      designSection="참여자 선정"
       description={
         isWrittenJustification
           ? '서류 심사 후보 목록에서 선정할 사람을 직접 체크하세요. 자기소개/지원사유 원문과 품질 점수를 함께 확인할 수 있습니다. 확정 전까지는 아무것도 저장되지 않습니다.'

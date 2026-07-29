@@ -84,6 +84,7 @@ export function ProgramDetailPage() {
   return (
     <PageShell
       title={program?.name ?? '프로그램 상세'}
+      designSection="프로그램 상세"
       description={
         program
           ? `${program.business_unit} · ${SELECTION_MODE_LABELS[program.selection_mode]} · ${STATUS_LABELS[program.status]}`
