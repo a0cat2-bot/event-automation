@@ -26,6 +26,8 @@ export const env = {
   llmProvider: process.env.LLM_PROVIDER || 'disabled',
   llmModel: process.env.LLM_MODEL || undefined,
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || undefined,
+  openAiApiKey: process.env.OPENAI_API_KEY || undefined,
+  openAiBaseUrl: process.env.OPENAI_BASE_URL || undefined,
   aiProApiUrl: process.env.AI_PRO_API_URL || undefined,
   aiProApiToken: process.env.AI_PRO_API_TOKEN || undefined,
 } as const;

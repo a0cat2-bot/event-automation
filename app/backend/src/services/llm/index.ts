@@ -1,18 +1,20 @@
 import { env } from '../../config/env.js';
 import { AiProProvider } from './aiProProvider.js';
 import { ClaudeProvider } from './claudeProvider.js';
+import { OpenAiProvider } from './openAiProvider.js';
 import type { LlmProvider } from './types.js';
 
 export type { LlmCompletion, LlmCompletionOptions, LlmProvider } from './types.js';
 export { LlmUnavailableError } from './types.js';
 
-export const LLM_PROVIDERS = ['disabled', 'claude', 'ai_pro'] as const;
+export const LLM_PROVIDERS = ['disabled', 'claude', 'openai', 'ai_pro'] as const;
 export type LlmProviderName = (typeof LLM_PROVIDERS)[number];
 
 /** The subset of configuration that decides which provider (if any) is used. */
 export interface LlmConfig {
   llmProvider: string;
   anthropicApiKey?: string | undefined;
+  openAiApiKey?: string | undefined;
   aiProApiUrl?: string | undefined;
   aiProApiToken?: string | undefined;
 }
@@ -24,6 +26,7 @@ export interface LlmConfig {
 export function resolveLlmProvider(config: LlmConfig): LlmProvider | null {
   if (config.llmProvider === 'disabled') return null;
   if (config.llmProvider === 'claude') return new ClaudeProvider();
+  if (config.llmProvider === 'openai') return new OpenAiProvider();
   if (config.llmProvider === 'ai_pro') return new AiProProvider();
 
   throw new Error(
@@ -34,6 +37,7 @@ export function resolveLlmProvider(config: LlmConfig): LlmProvider | null {
 /** Pure form of {@link isLlmConfigured}. */
 export function isLlmConfiguredFor(config: LlmConfig): boolean {
   if (config.llmProvider === 'claude') return Boolean(config.anthropicApiKey);
+  if (config.llmProvider === 'openai') return Boolean(config.openAiApiKey);
   if (config.llmProvider === 'ai_pro') return Boolean(config.aiProApiUrl && config.aiProApiToken);
   return false;
 }

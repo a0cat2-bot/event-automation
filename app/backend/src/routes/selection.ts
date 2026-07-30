@@ -5,6 +5,10 @@ import type { PoolClient } from 'pg';
 import { z } from 'zod';
 
 import { pool } from '../db/pool.js';
+import {
+  screenJustifications,
+  type JustificationAssessment,
+} from '../services/llm/justificationScreening.js';
 import { validate } from '../middleware/validate.js';
 import { programParams } from '../schemas/common.js';
 import { selectionGenerateBody } from '../schemas/contracts.js';
@@ -15,6 +19,8 @@ type SelectionGenerateBody = z.infer<typeof selectionGenerateBody>;
 
 interface ProgramRow {
   id: string;
+  name: string;
+  intake_data: Record<string, unknown> | null;
   selection_mode: SelectionMode | null;
   max_participants: number | null;
   requires_approval: boolean;
@@ -34,24 +40,6 @@ interface SelectedApplicant {
   reason: string;
 }
 
-interface QualityResult {
-  qualityScore: number;
-  matchedKeywords: string[];
-  readabilityGrade: number | null;
-}
-
-// Deliberately small and transparent for the MVP's deterministic phase-1 filter.
-const wellnessKeywords = [
-  'health',
-  'exercise',
-  'balance',
-  'stress',
-  'fitness',
-  'wellbeing',
-  'mindfulness',
-  'nutrition',
-] as const;
-
 function compareAppliedAt(left: ApplicantRow, right: ApplicantRow): number {
   const difference = new Date(left.applied_at).getTime() - new Date(right.applied_at).getTime();
   return difference || left.id.localeCompare(right.id);
@@ -67,51 +55,10 @@ function isForeignKeyViolation(error: unknown): boolean {
   );
 }
 
-function approximateSyllableCount(word: string): number {
-  const normalized = word.toLowerCase().replace(/[^a-z]/g, '');
-  if (!normalized) return 0;
-  if (normalized.length <= 3) return 1;
-
-  const vowelGroups = normalized.match(/[aeiouy]+/g)?.length ?? 1;
-  const silentEAdjustment = normalized.endsWith('e') && !normalized.endsWith('le') ? 1 : 0;
-  return Math.max(1, vowelGroups - silentEAdjustment);
-}
-
-/**
- * Simplified Flesch-Kincaid grade approximation: words and sentence-ending punctuation are
- * counted directly, while syllables are estimated from English vowel groups (with a basic
- * silent-e adjustment). This avoids a heavyweight readability dependency for the MVP.
- */
-function approximateFleschKincaidGrade(text: string): number | null {
-  const words = text.match(/[A-Za-z]+(?:'[A-Za-z]+)?/g) ?? [];
-  if (words.length === 0) return null;
-
-  const sentenceCount = Math.max(
-    1,
-    text
-      .split(/[.!?]+/)
-      .map((sentence) => sentence.trim())
-      .filter(Boolean).length,
-  );
-  const syllableCount = words.reduce((total, word) => total + approximateSyllableCount(word), 0);
-
-  return 0.39 * (words.length / sentenceCount) + 11.8 * (syllableCount / words.length) - 15.59;
-}
-
-function justificationQuality(text: string | null): QualityResult {
-  const justification = text ?? '';
-  const words = new Set((justification.toLowerCase().match(/[a-z]+/g) ?? []).map(String));
-  const matchedKeywords = wellnessKeywords.filter((keyword) => words.has(keyword));
-  const readabilityGrade = approximateFleschKincaidGrade(justification);
-  const lengthBonus = Math.min(justification.length / 500, 1) * 20;
-  const keywordBonus = Math.min(matchedKeywords.length * 10, 30);
-  const readabilityBonus = readabilityGrade !== null && readabilityGrade < 12 ? 10 : 0;
-
-  return {
-    qualityScore: lengthBonus + keywordBonus + readabilityBonus,
-    matchedKeywords: [...matchedKeywords],
-    readabilityGrade,
-  };
+/** Gives the screener the program's own description as context for what a good answer looks like. */
+function programDescription(intakeData: Record<string, unknown> | null): string | null {
+  const value = intakeData?.['description'];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
 }
 
 export const selectionRouter = Router();
@@ -137,7 +84,7 @@ selectionRouter.post(
       transactionStarted = true;
 
       const programResult = await client.query<ProgramRow>(
-        `SELECT id, selection_mode, max_participants, requires_approval
+        `SELECT id, name, intake_data, selection_mode, max_participants, requires_approval
          FROM programs
          WHERE id = $1
            AND deleted_at IS NULL
@@ -221,9 +168,22 @@ selectionRouter.post(
         justification: string | null;
         applied_at: Date;
         quality_score: number;
-        matched_keywords: string[];
-        readability_grade: number | null;
+        /** Why this score was given. The coordinator reviews this before confirming. */
+        rationale: string | null;
+        assessed_by: 'ai' | 'heuristic';
       }> = [];
+      // Recorded in the audit log and returned to the UI so an AI-influenced ranking is never
+      // presented as if it had been produced the same way as a rule-based one.
+      let screeningMethod: 'ai' | 'heuristic' = 'heuristic';
+      let screeningModel: string | null = null;
+      let screeningFallbackReason: string | null = null;
+      // Returned alongside the candidate list so the UI can label AI-assisted scores as such and
+      // explain a fallback, rather than presenting every ranking as if it came from the same place.
+      const screeningInfo = () => ({
+        method: screeningMethod,
+        model: screeningModel,
+        fallback_reason: screeningFallbackReason,
+      });
 
       // Excluded applicants are removed from the candidate pool BEFORE ranking (not just
       // deleted from the result afterward), and forced-includes reserve a slot up front — so
@@ -269,28 +229,56 @@ selectionRouter.post(
           });
         }
       } else {
+        // Phase 1 only ranks candidates for review — the coordinator still confirms the final
+        // list, whether the ranking came from the LLM or the fallback heuristic.
+        const outcome = await screenJustifications(
+          eligibleApplicants.map((applicant) => ({
+            applicantId: applicant.id,
+            justification: applicant.justification,
+          })),
+          {
+            programName: program.name,
+            programDescription: programDescription(program.intake_data),
+          },
+        );
+        screeningMethod = outcome.method;
+        screeningModel = outcome.model;
+        screeningFallbackReason = outcome.fallbackReason;
+
+        const assessmentByApplicantId = new Map(
+          outcome.assessments.map((assessment) => [assessment.applicantId, assessment]),
+        );
+
         // §6 fixes phase-1 at exactly 3x max_participants. The request's threshold and
         // multiplier remain accepted only for forward API compatibility in this pass.
         candidates = eligibleApplicants
           .map((applicant) => ({
             applicant,
-            quality: justificationQuality(applicant.justification),
+            assessment:
+              assessmentByApplicantId.get(applicant.id) ??
+              ({
+                applicantId: applicant.id,
+                qualityScore: 0,
+                rationale: null,
+                method: 'heuristic' as const,
+                matchedKeywords: [],
+              } satisfies JustificationAssessment),
           }))
           .sort(
             (left, right) =>
-              right.quality.qualityScore - left.quality.qualityScore ||
+              right.assessment.qualityScore - left.assessment.qualityScore ||
               compareAppliedAt(left.applicant, right.applicant),
           )
           .slice(0, 3 * program.max_participants)
-          .map(({ applicant, quality }) => ({
+          .map(({ applicant, assessment }) => ({
             applicant_id: applicant.id,
             email: applicant.email,
             name: applicant.name,
             justification: applicant.justification,
             applied_at: applicant.applied_at,
-            quality_score: quality.qualityScore,
-            matched_keywords: quality.matchedKeywords,
-            readability_grade: quality.readabilityGrade,
+            quality_score: assessment.qualityScore,
+            rationale: assessment.rationale,
+            assessed_by: assessment.method,
           }));
       }
 
@@ -333,7 +321,9 @@ selectionRouter.post(
           selected_participants: selectedParticipants,
           total_selected: selectedParticipants.length,
           completed_at: completedAt,
-          ...(program.selection_mode === 'written_justification' ? { candidates } : {}),
+          ...(program.selection_mode === 'written_justification'
+            ? { candidates, screening: screeningInfo() }
+            : {}),
         });
         return;
       }
@@ -444,6 +434,17 @@ selectionRouter.post(
             total_selected: selectedParticipants.length,
             override_count: request.body.override_selections.length,
             ...(approvedBy ? { approved_by: approvedBy } : {}),
+            // Records whether an LLM influenced the ranking, and which model, so a selection
+            // decision can be traced back later.
+            ...(program.selection_mode === 'written_justification'
+              ? {
+                  screening_method: screeningMethod,
+                  ...(screeningModel ? { screening_model: screeningModel } : {}),
+                  ...(screeningFallbackReason
+                    ? { screening_fallback_reason: screeningFallbackReason }
+                    : {}),
+                }
+              : {}),
           }),
           request.ip || null,
         ],
@@ -461,7 +462,9 @@ selectionRouter.post(
         selected_participants: selectedParticipants,
         total_selected: selectedParticipants.length,
         completed_at: completedAt,
-        ...(program.selection_mode === 'written_justification' ? { candidates } : {}),
+        ...(program.selection_mode === 'written_justification'
+          ? { candidates, screening: screeningInfo() }
+          : {}),
       });
     } catch (error) {
       if (client && transactionStarted) {

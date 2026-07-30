@@ -34,6 +34,27 @@ test('claude provider is only reported configured once a key is present', () => 
   assert.equal(resolveLlmProvider(config({ llmProvider: 'claude' }))?.name, 'claude');
 });
 
+test('openai provider is only reported configured once a key is present', () => {
+  assert.equal(isLlmConfiguredFor(config({ llmProvider: 'openai' })), false);
+  assert.equal(
+    isLlmConfiguredFor(config({ llmProvider: 'openai', openAiApiKey: 'sk-test' })),
+    true,
+  );
+  assert.equal(resolveLlmProvider(config({ llmProvider: 'openai' }))?.name, 'openai');
+});
+
+test('a key for one provider does not configure another', () => {
+  // Guards against a stale key in .env silently enabling whichever provider is selected.
+  assert.equal(
+    isLlmConfiguredFor(config({ llmProvider: 'claude', openAiApiKey: 'sk-test' })),
+    false,
+  );
+  assert.equal(
+    isLlmConfiguredFor(config({ llmProvider: 'openai', anthropicApiKey: 'sk-ant-test' })),
+    false,
+  );
+});
+
 test('ai_pro provider requires both the endpoint and the token', () => {
   const urlOnly = config({ llmProvider: 'ai_pro', aiProApiUrl: 'https://internal.example/v1/chat' });
   assert.equal(isLlmConfiguredFor(urlOnly), false);
