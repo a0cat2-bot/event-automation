@@ -11,6 +11,7 @@ const ADMIN_LINKS: Array<{ to: string; label: string; minRole: UserRole }> = [
   { to: '/business-units', label: '사업부 관리', minRole: 'admin' },
   { to: '/org-settings', label: '조직 설정', minRole: 'admin' },
   { to: '/users', label: '사용자 관리', minRole: 'admin' },
+  { to: '/cycle-metrics', label: '운영 소요 시간', minRole: 'admin' },
   { to: '/audit-logs', label: '작업 히스토리', minRole: 'admin' },
 ];
 

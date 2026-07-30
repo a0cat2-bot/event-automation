@@ -103,7 +103,23 @@ programsRouter.post(
         ],
       );
 
-      response.status(201).json({ program: result.rows[0] });
+      const created = result.rows[0];
+
+      // Marks the start of a program cycle. Without it the cycle-time report has no beginning to
+      // measure from, since programs.created_at is not written to the audit trail.
+      await pool.query(
+        `INSERT INTO audit_logs
+           (actor_name, action, entity_type, entity_id, program_id, details, ip_address)
+         VALUES ($1, 'program_created', 'program', $2, $2, $3::jsonb, $4)`,
+        [
+          getActorName(request),
+          created?.id,
+          JSON.stringify({ selection_mode: created?.selection_mode ?? null }),
+          request.ip || null,
+        ],
+      );
+
+      response.status(201).json({ program: created });
     } catch (error) {
       if (isForeignKeyViolation(error)) {
         response.status(400).json({ error: '존재하지 않는 사업부입니다.' });

@@ -5,6 +5,7 @@ import { aiSettingsRouter } from './aiSettings.js';
 import { applicantsRouter } from './applicants.js';
 import { auditLogsRouter } from './auditLogs.js';
 import { businessUnitsRouter } from './businessUnits.js';
+import { cycleMetricsRouter } from './cycleMetrics.js';
 import { giftsRouter } from './gifts.js';
 import { letterCategoriesRouter } from './letterCategories.js';
 import { lettersRouter } from './letters.js';
@@ -37,6 +38,9 @@ apiRouter.use('/letter-categories', requireRoleByMethod('viewer', 'admin'));
 // Audit history is an oversight function, not an operational one.
 apiRouter.use('/audit-logs', requireRole('admin'));
 
+// Effectiveness reporting is oversight, same as the audit history it derives from.
+apiRouter.use('/cycle-metrics', requireRole('admin'));
+
 // Granting roles is the most privileged action in the app.
 apiRouter.use('/users', requireRole('admin'));
 
@@ -66,3 +70,4 @@ apiRouter.use(reportsRouter);
 apiRouter.use(auditLogsRouter);
 apiRouter.use(usersRouter);
 apiRouter.use(aiSettingsRouter);
+apiRouter.use(cycleMetricsRouter);

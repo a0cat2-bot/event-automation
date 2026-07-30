@@ -6,6 +6,7 @@ import { AuditLogPage } from './pages/AuditLogPage';
 import { ApplicantReviewSelectionPage } from './pages/ApplicantReviewSelectionPage';
 import { ApplicantUploadPage } from './pages/ApplicantUploadPage';
 import { BusinessUnitsPage } from './pages/BusinessUnitsPage';
+import { CycleMetricsPage } from './pages/CycleMetricsPage';
 import { DashboardPage } from './pages/DashboardPage';
 import { GiftSelectionPage } from './pages/GiftSelectionPage';
 import { LetterDraftsPage } from './pages/LetterDraftsPage';
@@ -48,6 +49,7 @@ const router = createBrowserRouter([
       { path: '/business-units', element: <BusinessUnitsPage /> },
       { path: '/org-settings', element: <OrgSettingsPage /> },
       { path: '/users', element: <UsersPage /> },
+      { path: '/cycle-metrics', element: <CycleMetricsPage /> },
       { path: '/audit-logs', element: <AuditLogPage /> },
       { path: '*', element: <NotFoundPage /> },
     ],

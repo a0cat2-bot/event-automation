@@ -10,6 +10,7 @@ import { z } from 'zod';
 
 import { pool } from '../db/pool.js';
 import { validate } from '../middleware/validate.js';
+import { getActorName } from '../utils/actor.js';
 import { programParams } from '../schemas/common.js';
 import { giftItemCreateBody, giftSelectBody } from '../schemas/contracts.js';
 import { uploadsRoot } from '../utils/storage.js';
@@ -309,6 +310,24 @@ giftsRouter.post(
                ORDER BY gr.selection_rank ASC, gr.id ASC`,
               [programId, selections.map((selection) => selection.id)],
             );
+
+      // Written inside the transaction so the audit trail cannot record a selection that was
+      // subsequently rolled back.
+      await client.query(
+        `INSERT INTO audit_logs
+           (actor_name, action, entity_type, entity_id, program_id, details, ip_address)
+         VALUES ($1, 'gift_selection', 'program', $2, $2, $3::jsonb, $4)`,
+        [
+          getActorName(request),
+          programId,
+          JSON.stringify({
+            gift_item_id: giftItemId,
+            requested_count: remainingQuantity,
+            selected_count: selections.length,
+          }),
+          request.ip || null,
+        ],
+      );
 
       await client.query('COMMIT');
       transactionStarted = false;

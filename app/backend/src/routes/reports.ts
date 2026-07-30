@@ -8,6 +8,7 @@ import { pool } from '../db/pool.js';
 import { validate } from '../middleware/validate.js';
 import { programParams, reportParams } from '../schemas/common.js';
 import { reportGenerateBody } from '../schemas/contracts.js';
+import { getActorName } from '../utils/actor.js';
 import { getBrowser } from '../utils/browser.js';
 import { uploadsRoot } from '../utils/storage.js';
 
@@ -441,6 +442,20 @@ reportsRouter.post(
         [reportId, programId, format, content, filePath, JSON.stringify(summary)],
       );
       pdfAbsolutePath = null;
+
+      // Marks the end of a program cycle for the cycle-time report.
+      await pool.query(
+        `INSERT INTO audit_logs
+           (actor_name, action, entity_type, entity_id, program_id, details, ip_address)
+         VALUES ($1, 'report_generated', 'program', $2, $2, $3::jsonb, $4)`,
+        [
+          getActorName(request),
+          programId,
+          JSON.stringify({ report_id: reportId, format }),
+          request.ip || null,
+        ],
+      );
+
       response.status(201).json({ report: result.rows[0] });
     } catch (error) {
       if (pdfAbsolutePath) {
