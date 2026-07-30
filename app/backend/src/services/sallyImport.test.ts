@@ -7,7 +7,7 @@ import test from 'node:test';
 
 import * as XLSX from 'xlsx';
 
-import { parseSallyIdentity, parseSallyImport } from './sallyImport.js';
+import { knoxIdToEmail, parseSallyIdentity, parseSallyImport } from './sallyImport.js';
 
 function writeWorkbook(rows: unknown[][], filePath: string) {
   const workbook = XLSX.utils.book_new();
@@ -18,18 +18,18 @@ function writeWorkbook(rows: unknown[][], filePath: string) {
 
 test('parseSallyIdentity preserves parseable identity parts and reports malformed answers', () => {
   assert.deepEqual(parseSallyIdentity('gildong.hong / 홍길동'), {
-    externalId: 'gildong.hong',
+    knoxId: 'gildong.hong',
     name: '홍길동',
     issues: [],
   });
   const missingSeparator = parseSallyIdentity('gildong.hong');
-  assert.equal(missingSeparator.externalId, 'gildong.hong');
+  assert.equal(missingSeparator.knoxId, 'gildong.hong');
   assert.equal(missingSeparator.name, null);
   assert.equal(missingSeparator.issues[0]?.code, 'invalid_sally_identity_format');
   const missingId = parseSallyIdentity('/ 홍길동');
-  assert.equal(missingId.externalId, null);
+  assert.equal(missingId.knoxId, null);
   assert.equal(missingId.name, '홍길동');
-  assert.equal(missingId.issues[0]?.code, 'missing_sally_external_id');
+  assert.equal(missingId.issues[0]?.code, 'missing_sally_knox_id');
 });
 
 test('parseSallyImport maps exact headers and serializes only Q4 through Q13 answers', () => {
@@ -66,8 +66,7 @@ test('parseSallyImport maps exact headers and serializes only Q4 through Q13 ans
     const records = parseSallyImport(filePath);
     assert.equal(records.length, 1);
     assert.deepEqual(records[0], {
-      email: 'gildong@example.com',
-      external_id: 'gildong.hong',
+      knox_id: 'gildong.hong',
       name: '홍길동',
       applied_at: '2026-07-20T09:30:00+09:00',
       department: null,
@@ -100,4 +99,16 @@ test('parseSallyImport rejects exports without exact required headers', () => {
   } finally {
     rmSync(filePath, { force: true });
   }
+});
+
+test('knoxIdToEmail never invents a domain', () => {
+  // A Knox ID that is already an address is taken as-is.
+  assert.equal(knoxIdToEmail('gildong.hong@samsung.com'), 'gildong.hong@samsung.com');
+  assert.equal(knoxIdToEmail('  gildong.hong@samsung.com  '), 'gildong.hong@samsung.com');
+
+  // With no KNOX_EMAIL_DOMAIN configured, a bare ID yields nothing rather than a guessed address.
+  // stageSallyImport turns the empty result into a row-level error the coordinator can act on.
+  assert.equal(knoxIdToEmail('gildong.hong'), '');
+  assert.equal(knoxIdToEmail(''), '');
+  assert.equal(knoxIdToEmail('   '), '');
 });

@@ -33,7 +33,6 @@ const STATUS_LABELS: Record<PreviewResponse['rows'][number]['status'], string> =
 };
 
 type ApplicantFormState = {
-  external_id: string;
   name: string;
   email: string;
   department: string;
@@ -49,7 +48,6 @@ function localDateTimeValue(value: Date): string {
 
 function emptyApplicantForm(): ApplicantFormState {
   return {
-    external_id: '',
     name: '',
     email: '',
     department: '',
@@ -61,7 +59,6 @@ function emptyApplicantForm(): ApplicantFormState {
 
 function applicantForm(applicant: Applicant): ApplicantFormState {
   return {
-    external_id: applicant.external_id ?? '',
     name: applicant.name ?? '',
     email: applicant.email ?? '',
     department: applicant.department ?? '',
@@ -76,7 +73,6 @@ function applicantInput(
   selectionMode: SelectionMode,
 ): ApplicantInput {
   return {
-    external_id: values.external_id.trim(),
     name: values.name.trim(),
     email: values.email.trim(),
     department: values.department.trim(),
@@ -99,15 +95,6 @@ function ApplicantFields({
 }) {
   return (
     <>
-      <label>
-        사번
-        <input
-          required
-          maxLength={50}
-          value={values.external_id}
-          onChange={(event) => onChange('external_id', event.target.value)}
-        />
-      </label>
       <label>
         이름
         <input
@@ -339,7 +326,7 @@ export function ApplicantUploadPage() {
       <div className="content-card">
         <h2>CSV 파일 선택</h2>
         <p className="field-hint">
-          필수 열: external_id, name, email, department. 선정 방식에 따라 score 또는
+          필수 열: name, email, department. 선정 방식에 따라 score 또는
           justification 열이 추가로 필요합니다.
         </p>
         <input type="file" accept=".csv,text/csv" onChange={handleFileChange} />
@@ -388,7 +375,6 @@ export function ApplicantUploadPage() {
               <thead>
                 <tr>
                   <th>#</th>
-                  <th>사번</th>
                   <th>이름</th>
                   <th>이메일</th>
                   <th>부서</th>
@@ -399,7 +385,6 @@ export function ApplicantUploadPage() {
                 {preview.rows.map((row) => (
                   <tr key={row.row_number}>
                     <td>{row.row_number}</td>
-                    <td>{row.external_id}</td>
                     <td>{row.name}</td>
                     <td>{row.email}</td>
                     <td>{row.department}</td>
@@ -478,7 +463,6 @@ export function ApplicantUploadPage() {
             <table>
               <thead>
                 <tr>
-                  <th>사번</th>
                   <th>이름</th>
                   <th>이메일</th>
                   <th>부서</th>
@@ -492,7 +476,6 @@ export function ApplicantUploadPage() {
                 {applicants.map((applicant) => (
                   <Fragment key={applicant.id}>
                     <tr>
-                      <td>{applicant.external_id ?? '—'}</td>
                       <td>{applicant.name ?? '—'}</td>
                       <td>{applicant.email ?? '—'}</td>
                       <td>{applicant.department ?? '—'}</td>

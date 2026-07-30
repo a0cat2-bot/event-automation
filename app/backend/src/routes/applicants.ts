@@ -43,7 +43,6 @@ interface ValidationIssue {
 
 interface StagedApplicantRow {
   rowNumber: number;
-  externalId: string;
   email: string;
   name: string;
   department: string;
@@ -76,8 +75,7 @@ interface ConfirmBody {
 interface ApplicantResultRow {
   id: string;
   program_id: string;
-  external_id: string | null;
-  email: string | null;
+  email: string;
   name: string | null;
   department: string | null;
   score: number | null;
@@ -108,7 +106,6 @@ const basicEmailPattern =
   /^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+)*@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
 const applicantParams = programParams.extend({ applicant_id: z.string().uuid() });
 const applicantBody = z.object({
-  external_id: z.string().trim().min(1).max(50),
   name: z.string().trim().min(1).max(255),
   email: z.string().trim().min(1).max(255).regex(basicEmailPattern),
   department: z.string().trim().min(1).max(100),
@@ -280,7 +277,6 @@ function parseApplicantRows(
   uploadTime: number,
 ) {
   const rows = records.map<StagedApplicantRow>((record, index) => {
-    const externalId = (record.external_id ?? '').trim();
     const email = (record.email ?? '').trim();
     const name = (record.name ?? '').trim();
     const department = (record.department ?? '').trim();
@@ -293,7 +289,6 @@ function parseApplicantRows(
 
     const row: StagedApplicantRow = {
       rowNumber: index + 2,
-      externalId,
       email,
       name,
       department,
@@ -305,20 +300,10 @@ function parseApplicantRows(
       issues: [],
     };
 
-    requiredField(row, externalId, 'external_id');
     requiredField(row, name, 'name');
     requiredField(row, email, 'email');
     requiredField(row, department, 'department');
 
-    if (externalId.length > 50) {
-      addIssue(
-        row,
-        'error',
-        'too_long',
-        'external_id must be at most 50 characters',
-        'external_id',
-      );
-    }
     if (name.length > 255) {
       addIssue(row, 'error', 'too_long', 'name must be at most 255 characters', 'name');
     }
@@ -386,19 +371,22 @@ function parseApplicantRows(
     return row;
   });
 
-  const firstRowByExternalId = new Map<string, number>();
+  // Email identifies an applicant, and is compared case-insensitively to match the database's
+  // unique index on (program_id, LOWER(email)).
+  const firstRowByEmail = new Map<string, number>();
   for (const row of rows) {
-    if (!row.externalId) continue;
-    const firstRow = firstRowByExternalId.get(row.externalId);
+    if (!row.email) continue;
+    const key = row.email.toLowerCase();
+    const firstRow = firstRowByEmail.get(key);
     if (firstRow === undefined) {
-      firstRowByExternalId.set(row.externalId, row.rowNumber);
+      firstRowByEmail.set(key, row.rowNumber);
     } else {
       addIssue(
         row,
         'duplicate',
         'duplicate_in_upload',
-        `external_id duplicates row ${firstRow} in this upload`,
-        'external_id',
+        `email duplicates row ${firstRow} in this upload`,
+        'email',
       );
     }
   }
@@ -437,7 +425,6 @@ function rowMatchesStatus(
 function previewRow(row: StagedApplicantRow) {
   return {
     row_number: row.rowNumber,
-    external_id: row.externalId,
     name: row.name,
     email: row.email,
     department: row.department,
@@ -518,23 +505,23 @@ applicantsRouter.post(
         validationLimits(program.intake_data),
         createdAt,
       );
-      const externalIds = [...new Set(rows.map((row) => row.externalId).filter(Boolean))];
-      if (externalIds.length > 0) {
-        const duplicateResult = await pool.query<{ external_id: string }>(
-          `SELECT external_id
+      const emails = [...new Set(rows.map((row) => row.email.toLowerCase()).filter(Boolean))];
+      if (emails.length > 0) {
+        const duplicateResult = await pool.query<{ email: string }>(
+          `SELECT LOWER(email) AS email
            FROM applicants
-           WHERE program_id = $1 AND external_id = ANY($2::text[])`,
-          [programId, externalIds],
+           WHERE program_id = $1 AND LOWER(email) = ANY($2::text[])`,
+          [programId, emails],
         );
-        const committedExternalIds = new Set(duplicateResult.rows.map((row) => row.external_id));
+        const committedEmails = new Set(duplicateResult.rows.map((row) => row.email));
         for (const row of rows) {
-          if (committedExternalIds.has(row.externalId)) {
+          if (committedEmails.has(row.email.toLowerCase())) {
             addIssue(
               row,
               'duplicate',
               'duplicate_existing_applicant',
-              'external_id already exists for this program',
-              'external_id',
+              'email already exists for this program',
+              'email',
             );
           }
         }
@@ -660,7 +647,6 @@ applicantsRouter.post(
           const values = [
             randomUUID(),
             programId,
-            row.externalId || null,
             row.email,
             row.name,
             row.department || null,
@@ -669,12 +655,14 @@ applicantsRouter.post(
             row.appliedAt,
           ];
 
+          // The conflict target matches the unique index applicants_program_email_key, which is
+          // on the LOWER(email) expression rather than the column.
           if (body.conflict_resolution === 'skip_duplicates') {
             const result = await client.query(
               `INSERT INTO applicants
-                 (id, program_id, external_id, email, name, department, score, justification, applied_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-               ON CONFLICT (program_id, external_id) DO NOTHING
+                 (id, program_id, email, name, department, score, justification, applied_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+               ON CONFLICT (program_id, LOWER(email)) DO NOTHING
                RETURNING id`,
               values,
             );
@@ -683,9 +671,9 @@ applicantsRouter.post(
           } else {
             await client.query(
               `INSERT INTO applicants
-                 (id, program_id, external_id, email, name, department, score, justification, applied_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-               ON CONFLICT (program_id, external_id) DO UPDATE SET
+                 (id, program_id, email, name, department, score, justification, applied_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+               ON CONFLICT (program_id, LOWER(email)) DO UPDATE SET
                  email = EXCLUDED.email,
                  name = EXCLUDED.name,
                  department = EXCLUDED.department,
@@ -730,7 +718,7 @@ applicantsRouter.post(
         response.status(500).json({
           error: 'Applicant import failed; no rows were committed',
           failed_row: failedRow
-            ? { row_number: failedRow.rowNumber, external_id: failedRow.externalId }
+            ? { row_number: failedRow.rowNumber, email: failedRow.email }
             : null,
           phase: failedPhase,
           details: errorMessage(error),
@@ -765,7 +753,7 @@ applicantsRouter.get(
       }
 
       const result = await pool.query<ApplicantResultRow>(
-        `SELECT id, program_id, external_id, email, name, department, score,
+        `SELECT id, program_id, email, name, department, score,
                 justification, applied_at, created_at, updated_at
          FROM applicants
          WHERE program_id = $1
@@ -812,15 +800,13 @@ applicantsRouter.post(
         const applicant = parsed.data;
         const result = await pool.query<ApplicantResultRow>(
           `INSERT INTO applicants
-             (id, program_id, external_id, email, name, department, score, justification,
-              applied_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-           RETURNING id, program_id, external_id, email, name, department, score,
+             (id, program_id, email, name, department, score, justification, applied_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           RETURNING id, program_id, email, name, department, score,
                      justification, applied_at, created_at, updated_at`,
           [
             randomUUID(),
             programId,
-            applicant.external_id,
             applicant.email,
             applicant.name,
             applicant.department,
@@ -833,7 +819,7 @@ applicantsRouter.post(
       } catch (error) {
         if (isUniqueViolation(error)) {
           response.status(409).json({
-            error: '이 프로그램에 같은 사번의 신청자가 이미 있습니다.',
+            error: '이 프로그램에 같은 이메일의 신청자가 이미 있습니다.',
           });
           return;
         }
@@ -879,22 +865,20 @@ applicantsRouter.put(
         const applicant = parsed.data;
         const result = await pool.query<ApplicantResultRow>(
           `UPDATE applicants
-           SET external_id = COALESCE($3, external_id),
-               email = COALESCE($4, email),
-               name = COALESCE($5, name),
-               department = COALESCE($6, department),
-               score = COALESCE($7::int, score),
-               justification = COALESCE($8, justification),
-               applied_at = COALESCE($9::timestamp, applied_at),
+           SET email = COALESCE($3, email),
+               name = COALESCE($4, name),
+               department = COALESCE($5, department),
+               score = COALESCE($6::int, score),
+               justification = COALESCE($7, justification),
+               applied_at = COALESCE($8::timestamp, applied_at),
                updated_at = NOW()
            WHERE id = $1
              AND program_id = $2
-           RETURNING id, program_id, external_id, email, name, department, score,
+           RETURNING id, program_id, email, name, department, score,
                      justification, applied_at, created_at, updated_at`,
           [
             applicantId,
             programId,
-            applicant.external_id ?? null,
             applicant.email ?? null,
             applicant.name ?? null,
             applicant.department ?? null,
@@ -912,7 +896,7 @@ applicantsRouter.put(
       } catch (error) {
         if (isUniqueViolation(error)) {
           response.status(409).json({
-            error: '이 프로그램에 같은 사번의 신청자가 이미 있습니다.',
+            error: '이 프로그램에 같은 이메일의 신청자가 이미 있습니다.',
           });
           return;
         }

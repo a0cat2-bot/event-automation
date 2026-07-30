@@ -1,4 +1,4 @@
-import { IconChevronDown, IconUser } from '@tabler/icons-react';
+import { IconChevronDown, IconDots, IconUser } from '@tabler/icons-react';
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 
@@ -56,17 +56,13 @@ function AdminMenu() {
     <div className="admin-menu" ref={containerRef}>
       <button
         type="button"
-        className={isActive ? 'active' : undefined}
+        className={isActive ? 'admin-menu__trigger active' : 'admin-menu__trigger'}
         aria-expanded={isOpen}
+        aria-label="관리"
+        title="관리"
         onClick={() => setIsOpen((open) => !open)}
       >
-        관리
-        <IconChevronDown
-          size={14}
-          stroke={2}
-          className={isOpen ? 'chevron chevron--open' : 'chevron'}
-          aria-hidden="true"
-        />
+        <IconDots size={18} stroke={2} aria-hidden="true" />
       </button>
       {isOpen ? (
         <div className="admin-menu__panel">

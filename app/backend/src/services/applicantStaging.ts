@@ -12,7 +12,7 @@ export interface ValidationIssue {
 
 export interface StagedApplicantRow {
   rowNumber: number;
-  externalId: string;
+  /** Identifies the applicant. Compared case-insensitively, matching the database unique index. */
   email: string;
   name: string;
   department: string;

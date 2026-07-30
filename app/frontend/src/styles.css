@@ -159,6 +159,28 @@ a {
   padding: 0.35rem 0.75rem;
 }
 
+/* Icon-only trigger: square so the circular hover ring stays centred on the glyph. */
+.admin-menu__trigger {
+  color: var(--muted);
+  height: 34px;
+  justify-content: center;
+  padding: 0;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+  width: 34px;
+}
+
+.admin-menu__trigger:hover {
+  background: var(--surface-muted);
+  color: var(--ink);
+}
+
+.admin-menu__trigger.active {
+  background: var(--primary-tint);
+  color: var(--primary-hover);
+}
+
 .chevron {
   transition: transform 150ms ease;
 }
@@ -1062,6 +1084,79 @@ tbody tr:hover {
 }
 
 .checkbox-row__text {
+  display: grid;
+  gap: 0.15rem;
+}
+
+/* Settings switch. The real checkbox stays in the DOM (visually hidden but focusable) so keyboard
+   and screen-reader behaviour is preserved; the track and thumb are decorative. */
+.switch {
+  display: inline-flex;
+  flex-shrink: 0;
+  position: relative;
+}
+
+.switch input {
+  cursor: pointer;
+  height: 100%;
+  margin: 0;
+  min-height: 0;
+  opacity: 0;
+  position: absolute;
+  width: 100%;
+  z-index: 1;
+}
+
+.switch__track {
+  align-items: center;
+  background: var(--border-strong);
+  border-radius: 999px;
+  display: flex;
+  height: 22px;
+  padding: 2px;
+  transition: background-color 150ms ease;
+  width: 38px;
+}
+
+.switch__thumb {
+  background: var(--surface);
+  border-radius: 50%;
+  box-shadow: 0 1px 2px rgba(31, 29, 26, 0.2);
+  height: 18px;
+  transition: transform 150ms ease;
+  width: 18px;
+}
+
+.switch input:checked + .switch__track {
+  background: var(--primary);
+}
+
+.switch input:checked + .switch__track .switch__thumb {
+  transform: translateX(16px);
+}
+
+.switch input:focus-visible + .switch__track {
+  outline: 3px solid rgba(43, 102, 229, 0.22);
+  outline-offset: 2px;
+}
+
+.switch input:disabled {
+  cursor: not-allowed;
+}
+
+.switch input:disabled + .switch__track {
+  opacity: 0.5;
+}
+
+/* A switch sits to the right of its label, unlike a checkbox which precedes it. */
+.switch-row {
+  align-items: flex-start;
+  display: flex;
+  gap: 1rem;
+  justify-content: space-between;
+}
+
+.switch-row__text {
   display: grid;
   gap: 0.15rem;
 }

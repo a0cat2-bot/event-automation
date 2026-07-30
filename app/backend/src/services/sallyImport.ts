@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 
 import * as XLSX from 'xlsx';
 
+import { env } from '../config/env.js';
 import { pool } from '../db/pool.js';
 import {
   stageUpload,
@@ -21,14 +22,31 @@ interface SourceIssue {
 }
 
 export interface SallyStagedApplicantRecord {
-  email: string | null;
-  external_id: string | null;
+  /** Knox ID from question 1. Sally's own Email column is empty in real exports. */
+  knox_id: string | null;
   name: string | null;
   applied_at: string | Date | null;
   department: null;
   justification: string;
   score: null;
   issues: SourceIssue[];
+}
+
+/**
+ * Expands a Knox ID into the email address applicants are keyed by.
+ *
+ * Sally collects "Knox ID / 성명" in question 1 and leaves its own Email column blank, but letters
+ * are delivered by email, so the bare ID has to become an address. A value that already contains
+ * "@" is taken as-is; otherwise KNOX_EMAIL_DOMAIN is appended. Returns an empty string when the ID
+ * has no domain and none is configured — the caller turns that into a row-level error rather than
+ * inventing an address.
+ */
+export function knoxIdToEmail(knoxId: string): string {
+  const trimmed = knoxId.trim();
+  if (!trimmed) return '';
+  if (trimmed.includes('@')) return trimmed;
+  const domain = env.knoxEmailDomain?.trim().replace(/^@/, '');
+  return domain ? `${trimmed}@${domain}` : '';
 }
 
 export class SallyImportParseError extends Error {
@@ -76,20 +94,20 @@ function identityIssue(code: string, message: string, field?: string): SourceIss
 }
 
 export function parseSallyIdentity(value: unknown): {
-  externalId: string | null;
+  knoxId: string | null;
   name: string | null;
   issues: SourceIssue[];
 } {
   const identity = textValue(value);
   if (!identity) {
     return {
-      externalId: null,
+      knoxId: null,
       name: null,
       issues: [
         identityIssue(
           'missing_sally_identity',
           'Sally question 1 is empty; Knox ID and name could not be parsed',
-          'external_id',
+          'email',
         ),
       ],
     };
@@ -98,27 +116,27 @@ export function parseSallyIdentity(value: unknown): {
   const slashIndex = identity.indexOf('/');
   if (slashIndex < 0) {
     return {
-      externalId: identity,
+      knoxId: identity,
       name: null,
       issues: [
         identityIssue(
           'invalid_sally_identity_format',
-          'Sally question 1 is missing the "/" separator; the value was kept as external_id',
+          'Sally question 1 is missing the "/" separator; the value was kept as the Knox ID',
           'name',
         ),
       ],
     };
   }
 
-  const externalId = identity.slice(0, slashIndex).trim() || null;
+  const knoxId = identity.slice(0, slashIndex).trim() || null;
   const name = identity.slice(slashIndex + 1).trim() || null;
   const issues: SourceIssue[] = [];
-  if (!externalId) {
+  if (!knoxId) {
     issues.push(
       identityIssue(
-        'missing_sally_external_id',
+        'missing_sally_knox_id',
         'Sally question 1 has no Knox ID before the "/" separator',
-        'external_id',
+        'email',
       ),
     );
   }
@@ -131,7 +149,7 @@ export function parseSallyIdentity(value: unknown): {
       ),
     );
   }
-  return { externalId, name, issues };
+  return { knoxId, name, issues };
 }
 
 function findRequiredColumn(headers: unknown[], name: string) {
@@ -179,7 +197,6 @@ export function parseSallyImport(filePath: string): SallyStagedApplicantRecord[]
     throw new SallyImportParseError('Sally export is missing its header or question-text row');
   }
 
-  const emailIndex = findRequiredColumn(headers, 'Email');
   const submitTimeIndex = findRequiredColumn(headers, 'Submit time');
   const identityIndex = findRequiredColumn(headers, '1');
   const healthColumns = healthQuestionColumns(headers, questions);
@@ -194,8 +211,7 @@ export function parseSallyImport(filePath: string): SallyStagedApplicantRecord[]
 
     return [
       {
-        email: textValue(row[emailIndex]) || null,
-        external_id: identity.externalId,
+        knox_id: identity.knoxId,
         name: identity.name,
         applied_at: appliedAtValue(row[submitTimeIndex]),
         department: null,
@@ -226,8 +242,8 @@ export async function stageSallyImport(options: {
   const createdAt = Date.now();
   const rows = options.records.map<StagedApplicantRow>((record, index) => {
     const rowNumber = index + 4;
-    const externalId = record.external_id?.trim() ?? '';
-    const email = record.email?.trim() ?? '';
+    const knoxId = record.knox_id?.trim() ?? '';
+    const email = knoxIdToEmail(knoxId);
     const name = record.name?.trim() ?? '';
     const rawAppliedAt =
       record.applied_at instanceof Date
@@ -237,7 +253,6 @@ export async function stageSallyImport(options: {
     const parsedAppliedAt = rawAppliedAt ? new Date(rawAppliedAt) : new Date(fallbackAppliedAt);
     const row: StagedApplicantRow = {
       rowNumber,
-      externalId,
       email,
       name,
       department: '',
@@ -249,22 +264,22 @@ export async function stageSallyImport(options: {
       issues: record.issues.map((issue) => ({ row_number: rowNumber, ...issue })),
     };
 
-    // Sally's own "Email" export column is empty for every respondent in real exports
-    // (confirmed against an actual production download — Sally doesn't collect it for
-    // link-based/anonymous submissions). external_id (the Knox ID half of question 1) is
-    // what's actually reliable here, and it's also what applicants' UNIQUE(program_id,
-    // external_id) constraint keys off of — so require that instead of email.
-    if (!externalId) addIssue(row, 'error', 'required', 'external_id is required', 'external_id');
-    if (!name) addIssue(row, 'error', 'required', 'name is required', 'name');
-    if (externalId.length > 50) {
+    // Sally's own "Email" export column is empty for every respondent in real exports (confirmed
+    // against an actual production download — Sally doesn't collect it for link-based/anonymous
+    // submissions), so the Knox ID from question 1 is the only reliable identifier. Applicants are
+    // keyed by email, so the Knox ID is expanded into an address via KNOX_EMAIL_DOMAIN.
+    if (!knoxId) {
+      addIssue(row, 'error', 'required', 'Knox ID is required', 'email');
+    } else if (!email) {
       addIssue(
         row,
         'error',
-        'too_long',
-        'external_id must be at most 50 characters',
-        'external_id',
+        'missing_knox_email_domain',
+        'KNOX_EMAIL_DOMAIN is not configured, so the Knox ID cannot be turned into an email address',
+        'email',
       );
     }
+    if (!name) addIssue(row, 'error', 'required', 'name is required', 'name');
     if (email.length > 255) {
       addIssue(row, 'error', 'too_long', 'email must be at most 255 characters', 'email');
     } else if (email && !basicEmailPattern.test(email)) {
@@ -285,40 +300,41 @@ export async function stageSallyImport(options: {
     return row;
   });
 
-  const firstRowByExternalId = new Map<string, number>();
+  const firstRowByEmail = new Map<string, number>();
   for (const row of rows) {
-    if (!row.externalId) continue;
-    const firstRow = firstRowByExternalId.get(row.externalId);
+    if (!row.email) continue;
+    const key = row.email.toLowerCase();
+    const firstRow = firstRowByEmail.get(key);
     if (firstRow === undefined) {
-      firstRowByExternalId.set(row.externalId, row.rowNumber);
+      firstRowByEmail.set(key, row.rowNumber);
     } else {
       addIssue(
         row,
         'duplicate',
         'duplicate_in_upload',
-        `external_id duplicates row ${firstRow} in this upload`,
-        'external_id',
+        `email duplicates row ${firstRow} in this upload`,
+        'email',
       );
     }
   }
 
-  const externalIds = [...firstRowByExternalId.keys()];
-  if (externalIds.length > 0) {
-    const result = await pool.query<{ external_id: string }>(
-      `SELECT external_id
+  const emails = [...firstRowByEmail.keys()];
+  if (emails.length > 0) {
+    const result = await pool.query<{ email: string }>(
+      `SELECT LOWER(email) AS email
        FROM applicants
-       WHERE program_id = $1 AND external_id = ANY($2::text[])`,
-      [options.programId, externalIds],
+       WHERE program_id = $1 AND LOWER(email) = ANY($2::text[])`,
+      [options.programId, emails],
     );
-    const existingIds = new Set(result.rows.map((row) => row.external_id));
+    const existingEmails = new Set(result.rows.map((row) => row.email));
     for (const row of rows) {
-      if (existingIds.has(row.externalId)) {
+      if (existingEmails.has(row.email.toLowerCase())) {
         addIssue(
           row,
           'duplicate',
           'duplicate_existing_applicant',
-          'external_id already exists for this program',
-          'external_id',
+          'email already exists for this program',
+          'email',
         );
       }
     }

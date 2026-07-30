@@ -6,6 +6,8 @@ export const env = {
   databaseUrl: process.env.DATABASE_URL ?? 'postgresql://app:app@localhost:5432/app_db',
   sallyEmail: process.env.SALLY_EMAIL || undefined,
   sallyPassword: process.env.SALLY_PASSWORD || undefined,
+  // Sally collects a bare Knox ID; this turns it into the address letters are sent to.
+  knoxEmailDomain: process.env.KNOX_EMAIL_DOMAIN || undefined,
   emailProvider: process.env.EMAIL_PROVIDER || 'gmail',
   gmailUser: process.env.GMAIL_USER || undefined,
   gmailAppPassword: process.env.GMAIL_APP_PASSWORD || undefined,

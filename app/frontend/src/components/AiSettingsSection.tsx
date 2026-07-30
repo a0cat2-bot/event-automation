@@ -10,6 +10,7 @@ import {
   type AiSettings,
 } from '../api/aiSettings';
 import { useSession } from './SessionContext';
+import { ToggleSwitch } from './ToggleSwitch';
 
 const PROVIDER_LABELS: Record<string, string> = {
   disabled: '사용 안 함',
@@ -106,17 +107,16 @@ export function AiSettingsSection() {
 
           <div className="precaution-list">
             {AI_FEATURES.map((feature) => (
-              <label className="checkbox-row" key={feature}>
-                <input
-                  type="checkbox"
-                  checked={settings.flags[feature]}
-                  disabled={!canEdit || !isConfigured || savingFeature !== null}
-                  onChange={(event) => handleToggle(feature, event.target.checked)}
-                />
-                <span className="checkbox-row__text">
+              <label className="switch-row" key={feature}>
+                <span className="switch-row__text">
                   <strong>{AI_FEATURE_LABELS[feature]}</strong>
                   <span className="field-hint">{AI_FEATURE_DESCRIPTIONS[feature]}</span>
                 </span>
+                <ToggleSwitch
+                  checked={settings.flags[feature]}
+                  disabled={!canEdit || !isConfigured || savingFeature !== null}
+                  onChange={(next) => handleToggle(feature, next)}
+                />
               </label>
             ))}
           </div>

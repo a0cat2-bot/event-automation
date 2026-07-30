@@ -16,7 +16,6 @@ export type ValidationSummary = {
 
 export type PreviewRow = {
   row_number: number;
-  external_id: string;
   name: string;
   email: string;
   department: string;
@@ -56,7 +55,6 @@ export type ConfirmResponse = {
 export type Applicant = {
   id: string;
   program_id: string;
-  external_id: string | null;
   email: string | null;
   name: string | null;
   department: string | null;
@@ -71,7 +69,6 @@ type ApplicantsResponse = { applicants: Applicant[] };
 type ApplicantResponse = { applicant: Applicant };
 
 export type ApplicantInput = {
-  external_id: string;
   name: string;
   email: string;
   department: string;
