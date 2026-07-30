@@ -7,6 +7,7 @@ import {
   uploadOrgSettingsCharacterImage,
 } from '../api/letterTemplates';
 import { listBusinessUnits } from '../api/businessUnits';
+import { AiSettingsSection } from '../components/AiSettingsSection';
 import { PageShell } from '../components/PageShell';
 import { resolveBackendAssetUrl } from '../config/api';
 
@@ -283,6 +284,9 @@ export function OrgSettingsPage() {
           </div>
         </>
       ) : null}
+
+      {/* Organisation-wide, so it sits outside the per-business-unit settings above. */}
+      <AiSettingsSection />
     </PageShell>
   );
 }

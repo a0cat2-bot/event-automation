@@ -1,6 +1,7 @@
 import { Router } from 'express';
 
 import { requireRole, requireRoleByMethod } from '../middleware/auth.js';
+import { aiSettingsRouter } from './aiSettings.js';
 import { applicantsRouter } from './applicants.js';
 import { auditLogsRouter } from './auditLogs.js';
 import { businessUnitsRouter } from './businessUnits.js';
@@ -39,6 +40,10 @@ apiRouter.use('/audit-logs', requireRole('admin'));
 // Granting roles is the most privileged action in the app.
 apiRouter.use('/users', requireRole('admin'));
 
+// Whether AI may be used is a governance decision, so only admins may change it. Reading it is
+// allowed more widely so ordinary screens can tell whether an AI-assisted action is available.
+apiRouter.use('/ai-settings', requireRoleByMethod('viewer', 'admin'));
+
 // Program operation. Viewers may read; only coordinators and above may change anything.
 // Business-unit scoping is enforced per program inside the routers.
 apiRouter.use('/programs', requireRoleByMethod('viewer', 'coordinator'));
@@ -60,3 +65,4 @@ apiRouter.use(giftsRouter);
 apiRouter.use(reportsRouter);
 apiRouter.use(auditLogsRouter);
 apiRouter.use(usersRouter);
+apiRouter.use(aiSettingsRouter);
