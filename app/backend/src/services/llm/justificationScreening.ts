@@ -1,5 +1,5 @@
 import { getProviderForFeature } from './featureFlags.js';
-import { LlmUnavailableError } from './types.js';
+import { LlmUnavailableError, type LlmProvider } from './types.js';
 
 export interface JustificationCandidate {
   applicantId: string;
@@ -77,7 +77,13 @@ interface AiResponse {
 export async function screenJustifications(
   candidates: JustificationCandidate[],
   context: { programName: string; programDescription: string | null },
+  // Injectable so tests can pin the gate instead of depending on ambient env and database state —
+  // without it a test asserting the fallback silently makes a paid API call when a developer has
+  // a provider configured locally.
+  deps: { resolveProvider?: () => Promise<LlmProvider | null> } = {},
 ): Promise<ScreeningOutcome> {
+  const resolveProvider =
+    deps.resolveProvider ?? (() => getProviderForFeature('justification_screening'));
   const heuristic = () =>
     candidates.map<JustificationAssessment>((candidate) => ({
       applicantId: candidate.applicantId,
@@ -89,9 +95,9 @@ export async function screenJustifications(
     return { assessments: [], method: 'heuristic', model: null, fallbackReason: null };
   }
 
-  let provider;
+  let provider: LlmProvider | null;
   try {
-    provider = await getProviderForFeature('justification_screening');
+    provider = await resolveProvider();
   } catch (error) {
     return {
       assessments: heuristic(),

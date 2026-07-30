@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { heuristicQuality, screenJustifications } from './justificationScreening.js';
+import { LlmUnavailableError } from './types.js';
 
 /**
  * The heuristic is the path taken whenever AI is unavailable — the default, and the permanent
@@ -69,14 +70,15 @@ test('rationale flags repetition so the coordinator knows to look', () => {
 });
 
 test('screening falls back to the heuristic when AI is switched off', async () => {
-  // LLM_PROVIDER is unset in the test environment, so no provider can be constructed. Selection
-  // must still produce a ranking rather than failing.
   const outcome = await screenJustifications(
     [
       { applicantId: 'a', justification: SINCERE_LONG },
       { applicantId: 'b', justification: PADDED },
     ],
     { programName: '테스트 프로그램', programDescription: null },
+    // Pinned rather than relying on the ambient environment: without this the test makes a real,
+    // paid API call on any machine that happens to have a provider configured.
+    { resolveProvider: async () => null },
   );
 
   assert.equal(outcome.method, 'heuristic');
@@ -91,11 +93,102 @@ test('screening falls back to the heuristic when AI is switched off', async () =
 });
 
 test('screening an empty candidate list does not call a provider', async () => {
-  const outcome = await screenJustifications([], {
-    programName: '테스트 프로그램',
-    programDescription: null,
-  });
+  let called = false;
+  const outcome = await screenJustifications(
+    [],
+    { programName: '테스트 프로그램', programDescription: null },
+    {
+      resolveProvider: async () => {
+        called = true;
+        return null;
+      },
+    },
+  );
 
   assert.deepEqual(outcome.assessments, []);
   assert.equal(outcome.method, 'heuristic');
+  assert.equal(called, false, 'must not resolve a provider when there is nothing to screen');
+});
+
+test('a failing AI call degrades to the heuristic and reports why', async () => {
+  const outcome = await screenJustifications(
+    [{ applicantId: 'a', justification: SINCERE_LONG }],
+    { programName: '테스트 프로그램', programDescription: null },
+    {
+      resolveProvider: async () => ({
+        name: 'stub',
+        complete: async () => {
+          throw new LlmUnavailableError('gateway unreachable');
+        },
+      }),
+    },
+  );
+
+  assert.equal(outcome.method, 'heuristic');
+  assert.match(outcome.fallbackReason ?? '', /gateway unreachable/);
+  // Selection must still receive a usable ranking rather than an error.
+  assert.equal(outcome.assessments.length, 1);
+  assert.ok((outcome.assessments[0]?.qualityScore ?? 0) > 0);
+});
+
+test('an applicant the model omits falls back individually, not the whole run', async () => {
+  const outcome = await screenJustifications(
+    [
+      { applicantId: 'scored', justification: SINCERE_LONG },
+      { applicantId: 'omitted', justification: SINCERE_SHORT },
+    ],
+    { programName: '테스트 프로그램', programDescription: null },
+    {
+      resolveProvider: async () => ({
+        name: 'stub',
+        complete: async () => ({
+          text: '',
+          json: { assessments: [{ applicant_id: 'scored', score: 88, rationale: '구체적입니다.' }] },
+          model: 'stub-model',
+          inputTokens: null,
+          outputTokens: null,
+        }),
+      }),
+    },
+  );
+
+  assert.equal(outcome.method, 'ai');
+  assert.equal(outcome.model, 'stub-model');
+
+  const byId = new Map(outcome.assessments.map((a) => [a.applicantId, a]));
+  assert.equal(byId.get('scored')?.method, 'ai');
+  assert.equal(byId.get('scored')?.qualityScore, 88);
+  assert.equal(byId.get('omitted')?.method, 'heuristic');
+  assert.ok((byId.get('omitted')?.qualityScore ?? 0) > 0);
+});
+
+test('an out-of-range AI score is clamped rather than trusted', async () => {
+  const outcome = await screenJustifications(
+    [
+      { applicantId: 'high', justification: SINCERE_LONG },
+      { applicantId: 'low', justification: SINCERE_SHORT },
+    ],
+    { programName: '테스트 프로그램', programDescription: null },
+    {
+      resolveProvider: async () => ({
+        name: 'stub',
+        complete: async () => ({
+          text: '',
+          json: {
+            assessments: [
+              { applicant_id: 'high', score: 900, rationale: 'x' },
+              { applicant_id: 'low', score: -50, rationale: 'y' },
+            ],
+          },
+          model: 'stub-model',
+          inputTokens: null,
+          outputTokens: null,
+        }),
+      }),
+    },
+  );
+
+  const byId = new Map(outcome.assessments.map((a) => [a.applicantId, a.qualityScore]));
+  assert.equal(byId.get('high'), 100);
+  assert.equal(byId.get('low'), 0);
 });
