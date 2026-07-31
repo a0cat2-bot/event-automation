@@ -10,6 +10,7 @@ import { z } from 'zod';
 import { pool } from '../db/pool.js';
 import { validate } from '../middleware/validate.js';
 import { letterStandardContentBody, letterTemplateFieldsBody } from '../schemas/contracts.js';
+import { draftLetterCopy } from '../services/llm/letterCopy.js';
 import { uploadsRoot } from '../utils/storage.js';
 
 interface LetterTemplateRow {
@@ -328,6 +329,90 @@ programLetterContentRouter.post(
       );
 
       response.json({ cloned_count: result.rows.length });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+interface LetterDraftContextRow {
+  program_name: string;
+  intake_data: Record<string, unknown> | null;
+  category_name: string | null;
+  has_datetime: boolean | null;
+  has_location: boolean | null;
+  has_gift_info: boolean | null;
+  has_precautions: boolean | null;
+  org_display_name: string | null;
+}
+
+/**
+ * Drafts letter body copy for the coordinator to edit. Nothing is saved here — the draft is
+ * returned for review and only persisted when the coordinator saves the content as usual.
+ *
+ * 503 when AI is unavailable rather than an error page: the screen keeps working as a manual
+ * editor, which is how it behaved before this endpoint existed.
+ */
+programLetterContentRouter.post(
+  '/programs/:programId/letter-templates/:templateId/content/draft',
+  validate({ params: programTemplateParams }),
+  async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const { programId, templateId } = programTemplateParams.parse(request.params);
+
+      const contextResult = await pool.query<LetterDraftContextRow>(
+        `SELECT p.name AS program_name,
+                p.intake_data,
+                lc.display_name AS category_name,
+                lc.has_datetime, lc.has_location, lc.has_gift_info, lc.has_precautions,
+                (SELECT org_display_name FROM org_settings ORDER BY business_unit LIMIT 1)
+                  AS org_display_name
+           FROM programs p
+           JOIN letter_templates lt ON lt.id = $2
+           LEFT JOIN letter_categories lc ON lc.id = lt.category_id
+          WHERE p.id = $1 AND p.deleted_at IS NULL
+          LIMIT 1`,
+        [programId, templateId],
+      );
+      const context = contextResult.rows[0];
+      if (!context) {
+        response.status(404).json({ error: '프로그램 또는 레터 템플릿을 찾을 수 없습니다.' });
+        return;
+      }
+      if (!context.category_name) {
+        response.status(400).json({
+          error: '표준 레이아웃 템플릿에서만 본문 초안을 생성할 수 있습니다.',
+        });
+        return;
+      }
+
+      const description = context.intake_data?.['description'];
+      const draft = await draftLetterCopy({
+        categoryName: context.category_name,
+        sections: {
+          hasDatetime: context.has_datetime ?? false,
+          hasLocation: context.has_location ?? false,
+          hasGiftInfo: context.has_gift_info ?? false,
+          hasPrecautions: context.has_precautions ?? false,
+        },
+        programName: context.program_name,
+        programDescription:
+          typeof description === 'string' && description.trim() ? description.trim() : null,
+        orgDisplayName: context.org_display_name ?? '',
+      });
+
+      if (!draft) {
+        response.status(503).json({
+          error:
+            'AI 본문 생성을 사용할 수 없습니다. 조직 설정에서 기능이 켜져 있는지 확인하거나, 본문을 직접 작성하세요.',
+        });
+        return;
+      }
+
+      response.json({
+        body_text: draft.bodyText,
+        generated_by: { model: draft.model, request_id: draft.requestId },
+      });
     } catch (error) {
       next(error);
     }

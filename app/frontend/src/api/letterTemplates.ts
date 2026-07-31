@@ -310,3 +310,23 @@ export function uploadOrgSettingsCharacterImage(
     body,
   });
 }
+
+export type LetterCopyDraftResponse = {
+  body_text: string;
+  generated_by: { model: string; request_id: string | null };
+};
+
+/**
+ * Asks the backend for an AI-drafted letter body. Nothing is saved — the draft is returned for the
+ * coordinator to edit and save as usual. Rejects with the backend's message when AI is unavailable,
+ * so the caller can explain rather than fail silently.
+ */
+export function draftProgramLetterBody(
+  programId: string,
+  templateId: string,
+): Promise<LetterCopyDraftResponse> {
+  return apiRequest<LetterCopyDraftResponse>(
+    `/programs/${encodeURIComponent(programId)}/letter-templates/${encodeURIComponent(templateId)}/content/draft`,
+    { method: 'POST' },
+  );
+}

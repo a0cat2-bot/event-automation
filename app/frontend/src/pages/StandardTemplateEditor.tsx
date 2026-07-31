@@ -1,4 +1,4 @@
-import { IconArrowLeft } from '@tabler/icons-react';
+import { IconArrowLeft, IconSparkles } from '@tabler/icons-react';
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 
@@ -12,6 +12,7 @@ import {
   type OrgSettings,
   type ProgramLetterCustomization,
   type StandardContent,
+  draftProgramLetterBody,
   resetProgramLetterContent,
   updateLetterTemplateStandardContent,
   updateProgramLetterStandardContent,
@@ -73,6 +74,8 @@ export function StandardTemplateEditor({
   customization?: ProgramLetterCustomization | null;
   isCustomized?: boolean;
 }) {
+  const [isDrafting, setIsDrafting] = useState(false);
+  const [draftError, setDraftError] = useState<string | null>(null);
   const [category, setCategory] = useState<LetterCategory | null>(null);
   const [orgSettings, setOrgSettings] = useState<OrgSettings | null>(null);
   const [content, setContent] = useState<StandardContent>(
@@ -209,6 +212,21 @@ export function StandardTemplateEditor({
     }
   }
 
+  async function handleDraftBody() {
+    if (!programId) return;
+    setIsDrafting(true);
+    setDraftError(null);
+    try {
+      const { body_text: bodyText } = await draftProgramLetterBody(programId, String(template.id));
+      // Replaces the field rather than saving: the coordinator reviews and edits before saving.
+      updateContent('body_text', bodyText);
+    } catch (error) {
+      setDraftError(error instanceof Error ? error.message : '본문 초안을 생성하지 못했습니다.');
+    } finally {
+      setIsDrafting(false);
+    }
+  }
+
   const titleText = content.title_override?.trim() || category?.default_title_text || '';
   const previewBody = previewWithMergeFields(content.body_text);
 
@@ -320,6 +338,29 @@ export function StandardTemplateEditor({
               />
               <small className="field-hint">사용 가능한 병합 필드: {mergeFieldHint}</small>
             </label>
+
+            {programId ? (
+              <div className="stack-form">
+                <button
+                  className="button button--secondary"
+                  type="button"
+                  onClick={handleDraftBody}
+                  disabled={isDrafting}
+                  style={{ width: 'auto' }}
+                >
+                  <IconSparkles size={16} stroke={2} aria-hidden="true" />
+                  {isDrafting ? 'AI 초안 작성 중…' : 'AI로 본문 초안 만들기'}
+                </button>
+                <small className="field-hint">
+                  프로그램 정보로 초안을 만들어 위 본문에 넣습니다. 확인하고 고친 뒤 저장하세요.
+                </small>
+                {draftError ? (
+                  <p className="form-error" role="alert">
+                    {draftError}
+                  </p>
+                ) : null}
+              </div>
+            ) : null}
 
             {category.has_gift_info ? (
               <label>
