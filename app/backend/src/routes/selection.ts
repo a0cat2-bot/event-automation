@@ -170,11 +170,11 @@ selectionRouter.post(
         quality_score: number;
         /** Why this score was given. The coordinator reviews this before confirming. */
         rationale: string | null;
-        assessed_by: 'ai' | 'heuristic';
+        assessed_by: 'ai' | 'heuristic' | 'agent';
       }> = [];
       // Recorded in the audit log and returned to the UI so an AI-influenced ranking is never
       // presented as if it had been produced the same way as a rule-based one.
-      let screeningMethod: 'ai' | 'heuristic' = 'heuristic';
+      let screeningMethod: 'ai' | 'heuristic' | 'agent' = 'heuristic';
       let screeningModel: string | null = null;
       let screeningFallbackReason: string | null = null;
       // Returned alongside the candidate list so the UI can label AI-assisted scores as such and
@@ -231,23 +231,45 @@ selectionRouter.post(
       } else {
         // Phase 1 only ranks candidates for review — the coordinator still confirms the final
         // list, whether the ranking came from the LLM or the fallback heuristic.
-        const outcome = await screenJustifications(
-          eligibleApplicants.map((applicant) => ({
-            applicantId: applicant.id,
-            justification: applicant.justification,
-          })),
-          {
-            programName: program.name,
-            programDescription: programDescription(program.intake_data),
-          },
-        );
-        screeningMethod = outcome.method;
-        screeningModel = outcome.model;
-        screeningFallbackReason = outcome.fallbackReason;
+        // An agent working through MCP can supply the scores instead, for deployments where the
+        // in-app provider is unavailable. Ranking still happens here and the coordinator still
+        // confirms, so the shape of the decision is unchanged — only who produced the numbers.
+        const external = request.body.external_assessments;
+        let assessmentByApplicantId: Map<string, JustificationAssessment>;
 
-        const assessmentByApplicantId = new Map(
-          outcome.assessments.map((assessment) => [assessment.applicantId, assessment]),
-        );
+        if (external && external.length > 0) {
+          screeningMethod = 'agent';
+          assessmentByApplicantId = new Map(
+            external.map((entry) => [
+              entry.applicant_id,
+              {
+                applicantId: entry.applicant_id,
+                qualityScore: entry.score,
+                rationale: entry.rationale.trim() || null,
+                method: 'agent' as const,
+                matchedKeywords: [],
+              } satisfies JustificationAssessment,
+            ]),
+          );
+        } else {
+          const outcome = await screenJustifications(
+            eligibleApplicants.map((applicant) => ({
+              applicantId: applicant.id,
+              justification: applicant.justification,
+            })),
+            {
+              programName: program.name,
+              programDescription: programDescription(program.intake_data),
+            },
+          );
+          screeningMethod = outcome.method;
+          screeningModel = outcome.model;
+          screeningFallbackReason = outcome.fallbackReason;
+
+          assessmentByApplicantId = new Map(
+            outcome.assessments.map((assessment) => [assessment.applicantId, assessment]),
+          );
+        }
 
         // §6 fixes phase-1 at exactly 3x max_participants. The request's threshold and
         // multiplier remain accepted only for forward API compatibility in this pass.

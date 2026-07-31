@@ -16,6 +16,14 @@ export type JustificationCandidate = {
   quality_score: number;
   matched_keywords: string[];
   readability_grade: number | null;
+  /** Why this score was given. The coordinator reviews this before confirming. */
+  rationale: string | null;
+  /**
+   * Who produced the score. `ai` is this app's own provider with its fixed prompt and bias
+   * instructions; `agent` is a score supplied from outside through MCP, which carries none of
+   * those guarantees; `heuristic` is the rule-based fallback.
+   */
+  assessed_by: 'ai' | 'heuristic' | 'agent';
 };
 
 export type SelectionResult = {

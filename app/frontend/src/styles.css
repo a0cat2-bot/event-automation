@@ -1570,3 +1570,13 @@ tbody tr:hover {
     padding: 1.5rem;
   }
 }
+
+/* Score with the badge that says how it was produced — stacked so the number stays scannable
+   down the column while its qualifier stays attached to it. */
+.score-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  white-space: nowrap;
+}

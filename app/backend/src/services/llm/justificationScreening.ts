@@ -14,8 +14,15 @@ export interface JustificationAssessment {
   qualityScore: number;
   /** Why this score was given, shown to the coordinator. Never empty on an AI result. */
   rationale: string | null;
-  /** How the score was produced, so the UI and audit log never imply AI where there was none. */
-  method: 'ai' | 'heuristic';
+  /**
+   * How the score was produced, so the UI and audit log never imply more assurance than there was.
+   *
+   * `ai` means this app called its configured provider with the prompt below — bias instructions
+   * enforced, personal data redacted, model and request id recorded. `agent` means a score arrived
+   * from outside through MCP, where none of that is guaranteed. Collapsing the two would make the
+   * audit trail claim assurance the `agent` path does not have.
+   */
+  method: 'ai' | 'heuristic' | 'agent';
   /** Populated on heuristic results; the AI path explains itself in `rationale` instead. */
   matchedKeywords: string[];
 }

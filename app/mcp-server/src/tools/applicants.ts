@@ -102,7 +102,7 @@ export function registerApplicantTools(server: McpServer, backendApiUrl: string)
     'event_automation_list_applicants',
     {
       description:
-        'Lists applicants for a program. Requires program_id (UUID). Returns { applicants } ordered by application time, with IDs, contact fields, score, justification, and timestamps.',
+        'Lists applicants for a program. Requires program_id (UUID). Returns { applicants } ordered by application time, with IDs, contact fields, score, justification, and timestamps. Justification text is redacted before it leaves the app: phone numbers, email addresses and employee numbers an applicant wrote about themselves are replaced with placeholders, because none of that is needed to assess a motivation statement.',
       inputSchema: z.object({ program_id: z.string().uuid().describe('Program UUID.') }),
       annotations: {
         readOnlyHint: true,
@@ -115,7 +115,7 @@ export function registerApplicantTools(server: McpServer, backendApiUrl: string)
       toolRequest('List applicants', () =>
         backendRequest(
           backendApiUrl,
-          `/programs/${encodeURIComponent(program_id)}/applicants`,
+          `/programs/${encodeURIComponent(program_id)}/applicants?redact_free_text=true`,
         ),
       ),
   );

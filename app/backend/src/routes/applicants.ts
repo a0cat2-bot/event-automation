@@ -16,6 +16,7 @@ import {
   stagedUploadTtlMs,
 } from '../services/applicantStaging.js';
 import { getActorName } from '../utils/actor.js';
+import { redactPersonalData } from '../utils/redaction.js';
 
 type SelectionMode = 'first_come_first_served' | 'score' | 'written_justification';
 type IssueType = 'error' | 'warning' | 'duplicate';
@@ -740,9 +741,18 @@ applicantsRouter.post(
   },
 );
 
+const applicantListQuery = z.object({
+  // Set by the MCP server, which hands these rows to an AI client. The coordinator's own screen
+  // never sets it, because a coordinator is entitled to read exactly what the applicant wrote.
+  redact_free_text: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((value) => value === 'true'),
+});
+
 applicantsRouter.get(
   '/programs/:program_id/applicants',
-  validate({ params: programParams }),
+  validate({ params: programParams, query: applicantListQuery }),
   async (request: Request, response: Response, next: NextFunction) => {
     try {
       const programId = request.params.program_id as string;
@@ -752,6 +762,7 @@ applicantsRouter.get(
         return;
       }
 
+      const { redact_free_text: redactFreeText } = applicantListQuery.parse(request.query);
       const result = await pool.query<ApplicantResultRow>(
         `SELECT id, program_id, email, name, department, score,
                 justification, applied_at, created_at, updated_at
@@ -760,7 +771,14 @@ applicantsRouter.get(
          ORDER BY applied_at ASC, id ASC`,
         [programId],
       );
-      response.json({ applicants: result.rows });
+
+      const applicants = redactFreeText
+        ? result.rows.map((row) => ({
+            ...row,
+            justification: row.justification ? redactPersonalData(row.justification) : row.justification,
+          }))
+        : result.rows;
+      response.json({ applicants });
     } catch (error) {
       next(error);
     }

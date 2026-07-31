@@ -14,6 +14,25 @@ import { PageShell } from '../components/PageShell';
 import { ProgramContextBar } from '../components/ProgramContextBar';
 import { formatDateTime } from '../utils/format';
 
+/**
+ * Names the source of a score so a coordinator knows how much it is worth.
+ *
+ * `agent` is styled as a warning rather than as information: a score supplied through MCP did not
+ * pass the fixed prompt, the bias instructions, or the redaction the in-app path enforces, so it
+ * deserves a closer read — not because it is wrong, but because nothing here vouches for it.
+ */
+const ASSESSED_BY_LABEL: Record<'ai' | 'heuristic' | 'agent', string> = {
+  ai: 'AI 평가',
+  agent: 'Agent 평가',
+  heuristic: '기본 방식',
+};
+
+const ASSESSED_BY_CLASS: Record<'ai' | 'heuristic' | 'agent', string> = {
+  ai: 'status-badge--info',
+  agent: 'status-badge--warning',
+  heuristic: 'status-badge--success',
+};
+
 export function ApplicantReviewSelectionPage() {
   const { programId = '' } = useParams();
   const [program, setProgram] = useState<Program | null>(null);
@@ -321,7 +340,7 @@ export function ApplicantReviewSelectionPage() {
                     <th>부서</th>
                     <th>신청일시</th>
                     <th>품질 점수</th>
-                    <th>매칭 키워드</th>
+                    <th>평가 근거</th>
                     <th>자기소개 / 지원사유</th>
                   </tr>
                 </thead>
@@ -345,8 +364,19 @@ export function ApplicantReviewSelectionPage() {
                         <td>{candidate.email ?? applicant?.email}</td>
                         <td>{applicant?.department}</td>
                         <td>{formatDateTime(candidate.applied_at)}</td>
-                        <td>{candidate.quality_score.toFixed(1)}</td>
-                        <td>{candidate.matched_keywords.join(', ') || '—'}</td>
+                        <td>
+                          <div className="score-cell">
+                            <span>{candidate.quality_score.toFixed(1)}</span>
+                            <span
+                              className={`status-badge ${ASSESSED_BY_CLASS[candidate.assessed_by]}`}
+                            >
+                              {ASSESSED_BY_LABEL[candidate.assessed_by]}
+                            </span>
+                          </div>
+                        </td>
+                        <td style={{ minWidth: '200px' }}>
+                          {candidate.rationale || candidate.matched_keywords.join(', ') || '—'}
+                        </td>
                         <td style={{ whiteSpace: 'pre-wrap', minWidth: '280px' }}>
                           {candidate.justification || '—'}
                         </td>

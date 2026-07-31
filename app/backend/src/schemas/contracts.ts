@@ -160,6 +160,21 @@ export const selectionGenerateBody = z.object({
       reason: z.string().min(1).max(255),
     }),
   ),
+  // Scores computed outside this app — by an AI agent working through MCP, when the in-app
+  // provider is unavailable. Supplying these skips the app's own screening and ranks by them
+  // instead; the result is recorded as `agent` rather than `ai`, because the guarantees the
+  // in-app path enforces (fixed prompt, bias instructions, redaction, model id) do not apply.
+  // Ranking only — the coordinator still confirms the final list exactly as before.
+  external_assessments: z
+    .array(
+      z.object({
+        applicant_id: z.string().uuid(),
+        score: z.number().min(0).max(100),
+        rationale: z.string().min(1).max(1000),
+      }),
+    )
+    .max(500)
+    .optional(),
   // When true, computes the same candidate selection but does not write participants or an
   // audit log entry — lets a coordinator review who would be selected before committing.
   dry_run: z.boolean().optional().default(false),

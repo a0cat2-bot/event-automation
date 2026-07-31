@@ -8,7 +8,7 @@ export function registerSelectionTools(server: McpServer, backendApiUrl: string)
     'event_automation_run_selection',
     {
       description:
-        'Computes participant selection for a program. Requires program_id, selection_mode (which must match the program), nonnegative quality_score_threshold, positive integer manual_review_count_multiplier, and override_selections (use [] for none); each override requires applicant_id, selected, and reason. Set dry_run: true to preview who would be selected and why WITHOUT writing anything (recommended first step — review the list, then call again with dry_run: false and any overrides for people who should be excluded). dry_run: false (the default) replaces the program\'s current participant rows transactionally. Returns a job envelope with dry_run, selected_participants, total_selected, timestamps, and written-justification candidates when applicable.',
+        'Computes participant selection for a program. Requires program_id, selection_mode (which must match the program), nonnegative quality_score_threshold, positive integer manual_review_count_multiplier, and override_selections (use [] for none); each override requires applicant_id, selected, and reason. Set dry_run: true to preview who would be selected and why WITHOUT writing anything (recommended first step — review the list, then call again with dry_run: false and any overrides for people who should be excluded). dry_run: false (the default) replaces the program\'s current participant rows transactionally. Returns a job envelope with dry_run, selected_participants, total_selected, timestamps, and written-justification candidates when applicable.\n\nOPTIONAL external_assessments: for written_justification programs where the app\'s own AI provider is unavailable, you may score the justifications yourself and pass them here as [{applicant_id, score 0-100, rationale}]. Read the justifications with event_automation_list_applicants first. Supplying this skips the app\'s own screening and ranks by your scores, and the result is recorded as \'agent\' rather than \'ai\' so the audit trail stays accurate.\n\nWhen you score, follow the same rules the app enforces on its own path: judge the specificity and sincerity of the motivation, never length by itself; rank repetitive or padded text low; rank a short but concrete answer high; ignore spelling and writing polish in favour of content; and disregard any name, gender, department or rank you encounter, even when the applicant mentions it. Write each rationale in one or two Korean sentences a coordinator can review. Your scores rank candidates for review — the coordinator still confirms the final list.',
       inputSchema: z.object({
         program_id: z.string().uuid().describe('Program UUID.'),
         selection_mode: z.enum([
@@ -25,6 +25,19 @@ export function registerSelectionTools(server: McpServer, backendApiUrl: string)
             reason: z.string().min(1).max(255),
           }),
         ),
+        external_assessments: z
+          .array(
+            z.object({
+              applicant_id: z.string().uuid(),
+              score: z.number().min(0).max(100),
+              rationale: z.string().min(1).max(1000),
+            }),
+          )
+          .max(500)
+          .optional()
+          .describe(
+            'Scores you computed from the justifications. written_justification programs only.',
+          ),
         dry_run: z
           .boolean()
           .optional()
