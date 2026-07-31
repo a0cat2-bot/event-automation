@@ -32,28 +32,57 @@ test('an unrecognised auth provider fails loudly instead of silently disabling a
   assert.throws(() => resolveIdentityProvider(config('ldap')), /Unsupported AUTH_PROVIDER "ldap"/);
 });
 
-test('sso_header reads identity from proxy headers and ignores unrelated requests', () => {
+test('sso_header reads identity from the gateway headers', () => {
+  // Names follow the AI Pro guide's gateway contract: X-User-ID with X-User-Email alongside it.
   const provider = resolveIdentityProvider(config('sso_header'));
   assert.ok(provider);
 
   assert.deepEqual(
     provider.resolveIdentity({
-      'x-forwarded-email': 'gildong.hong@example.com',
-      'x-forwarded-displayname': '홍길동',
+      'x-user-email': 'gildong.hong@example.com',
+      'x-user-name': '홍길동',
     }),
     { email: 'gildong.hong@example.com', name: '홍길동' },
   );
 
+  // X-User-ID alone is enough when it already carries a full address.
+  assert.deepEqual(provider.resolveIdentity({ 'x-user-id': 'gildong.hong@example.com' }), {
+    email: 'gildong.hong@example.com',
+    name: undefined,
+  });
+
   assert.equal(provider.resolveIdentity({}), null);
   // A header present but blank must not be treated as an identity.
-  assert.equal(provider.resolveIdentity({ 'x-forwarded-email': '   ' }), null);
+  assert.equal(provider.resolveIdentity({ 'x-user-email': '   ' }), null);
+});
+
+test('a bare Knox ID with no configured domain is not accepted as an identity', () => {
+  // Signing someone in as a half-formed address would attribute their actions to the wrong row.
+  const provider = resolveIdentityProvider(config('sso_header'));
+  assert.ok(provider);
+
+  assert.equal(provider.resolveIdentity({ 'x-user-id': 'gildong.hong' }), null);
+});
+
+test('roles are never taken from the gateway', () => {
+  // This app's roles and business-unit scoping are application-specific; taking them from the
+  // gateway would create a second, disagreeing source of truth for who may run a selection.
+  const provider = resolveIdentityProvider(config('sso_header'));
+  assert.ok(provider);
+
+  const claim = provider.resolveIdentity({
+    'x-user-email': 'gildong.hong@example.com',
+    'x-user-roles': 'admin,superuser',
+  });
+
+  assert.deepEqual(Object.keys(claim ?? {}).sort(), ['email', 'name']);
 });
 
 test('dev_header provider never reads the SSO headers', () => {
   const provider = resolveIdentityProvider(config('dev_header'));
   assert.ok(provider);
 
-  assert.equal(provider.resolveIdentity({ 'x-forwarded-email': 'sso@example.com' }), null);
+  assert.equal(provider.resolveIdentity({ 'x-user-email': 'sso@example.com' }), null);
   assert.deepEqual(provider.resolveIdentity({ 'x-dev-user-email': 'dev@example.com' }), {
     email: 'dev@example.com',
     name: undefined,

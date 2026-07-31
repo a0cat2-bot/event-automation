@@ -7,7 +7,7 @@ import test from 'node:test';
 
 import * as XLSX from 'xlsx';
 
-import { knoxIdToEmail, parseSallyIdentity, parseSallyImport } from './sallyImport.js';
+import { parseSallyIdentity, parseSallyImport } from './sallyImport.js';
 
 function writeWorkbook(rows: unknown[][], filePath: string) {
   const workbook = XLSX.utils.book_new();
@@ -101,14 +101,3 @@ test('parseSallyImport rejects exports without exact required headers', () => {
   }
 });
 
-test('knoxIdToEmail never invents a domain', () => {
-  // A Knox ID that is already an address is taken as-is.
-  assert.equal(knoxIdToEmail('gildong.hong@samsung.com'), 'gildong.hong@samsung.com');
-  assert.equal(knoxIdToEmail('  gildong.hong@samsung.com  '), 'gildong.hong@samsung.com');
-
-  // With no KNOX_EMAIL_DOMAIN configured, a bare ID yields nothing rather than a guessed address.
-  // stageSallyImport turns the empty result into a row-level error the coordinator can act on.
-  assert.equal(knoxIdToEmail('gildong.hong'), '');
-  assert.equal(knoxIdToEmail(''), '');
-  assert.equal(knoxIdToEmail('   '), '');
-});

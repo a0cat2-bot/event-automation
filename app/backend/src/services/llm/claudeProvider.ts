@@ -65,6 +65,7 @@ export class ClaudeProvider implements LlmProvider {
         model: response.model,
         inputTokens: response.usage.input_tokens ?? null,
         outputTokens: response.usage.output_tokens ?? null,
+        requestId: response.id ?? null,
       };
     } catch (error) {
       if (error instanceof LlmUnavailableError) throw error;

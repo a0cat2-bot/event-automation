@@ -27,6 +27,12 @@ export interface LlmCompletion {
   model: string;
   inputTokens: number | null;
   outputTokens: number | null;
+  /**
+   * Provider-side request identifier, recorded alongside the decision so an entry in this app's
+   * audit log can be matched against the provider's own log. AI Pro returns it as `X-Request-ID`;
+   * providers without an equivalent return null.
+   */
+  requestId: string | null;
 }
 
 export interface LlmProvider {

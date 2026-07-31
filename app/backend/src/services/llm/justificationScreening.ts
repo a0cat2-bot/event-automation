@@ -1,3 +1,4 @@
+import { env } from '../../config/env.js';
 import { getProviderForFeature } from './featureFlags.js';
 import { LlmUnavailableError, type LlmProvider } from './types.js';
 
@@ -111,46 +112,126 @@ export async function screenJustifications(
     return { assessments: heuristic(), method: 'heuristic', model: null, fallbackReason: null };
   }
 
-  try {
-    const completion = await provider.complete({
-      system: SYSTEM_PROMPT,
-      prompt: buildPrompt(candidates, context),
-      maxTokens: Math.min(16000, 400 + candidates.length * 220),
-      jsonSchema: { name: 'justification_assessments', schema: RESPONSE_SCHEMA },
-    });
+  // Split before calling: every applicant in one prompt overruns the input limit of the internal
+  // models (6,000 tokens on aipro-standard and aipro-claude-sonnet), and the response counts
+  // against the same budget.
+  const batches = splitIntoBatches(candidates);
+  const assessmentById = new Map<string, JustificationAssessment>();
+  const failures: string[] = [];
+  let model: string | null = null;
 
-    const parsed = completion.json as AiResponse | null;
-    if (!parsed?.assessments) throw new LlmUnavailableError('AI 응답에 평가 결과가 없습니다.');
+  // Sequential rather than parallel: it keeps well clear of the burst limit, and a partial failure
+  // is easier to attribute. See the note in selection.ts about total elapsed time.
+  for (const batch of batches) {
+    try {
+      const completion = await provider.complete({
+        system: SYSTEM_PROMPT,
+        prompt: buildPrompt(batch, context),
+        maxTokens: responseTokenBudget(batch.length),
+        jsonSchema: { name: 'justification_assessments', schema: RESPONSE_SCHEMA },
+      });
 
-    const byId = new Map(parsed.assessments.map((entry) => [entry.applicant_id, entry]));
-    // Any applicant the model skipped falls back individually rather than failing the whole run.
-    const assessments = candidates.map<JustificationAssessment>((candidate) => {
-      const entry = byId.get(candidate.applicantId);
-      if (!entry || !Number.isFinite(entry.score)) {
-        return {
+      const parsed = completion.json as AiResponse | null;
+      if (!parsed?.assessments) throw new LlmUnavailableError('AI 응답에 평가 결과가 없습니다.');
+      model ??= completion.model;
+
+      const byId = new Map(parsed.assessments.map((entry) => [entry.applicant_id, entry]));
+      for (const candidate of batch) {
+        const entry = byId.get(candidate.applicantId);
+        // An applicant the model skipped falls back individually rather than failing the batch.
+        if (!entry || !Number.isFinite(entry.score)) continue;
+        assessmentById.set(candidate.applicantId, {
           applicantId: candidate.applicantId,
-          ...heuristicQuality(candidate.justification),
-          method: 'heuristic' as const,
-        };
+          qualityScore: clamp(entry.score, 0, 100),
+          rationale: entry.rationale?.trim() || null,
+          method: 'ai',
+          matchedKeywords: [],
+        });
       }
-      return {
-        applicantId: candidate.applicantId,
-        qualityScore: clamp(entry.score, 0, 100),
-        rationale: entry.rationale?.trim() || null,
-        method: 'ai' as const,
-        matchedKeywords: [],
-      };
-    });
+    } catch (error) {
+      // One failed batch must not discard the batches that succeeded.
+      failures.push(errorText(error));
+    }
+  }
 
-    return { assessments, method: 'ai', model: completion.model, fallbackReason: null };
-  } catch (error) {
+  // Anything the AI did not score — a failed batch, or an applicant the model omitted — keeps the
+  // heuristic score, so every applicant is always ranked.
+  const assessments = candidates.map<JustificationAssessment>(
+    (candidate) =>
+      assessmentById.get(candidate.applicantId) ?? {
+        applicantId: candidate.applicantId,
+        ...heuristicQuality(candidate.justification),
+        method: 'heuristic' as const,
+      },
+  );
+
+  const scoredByAi = assessmentById.size;
+  if (scoredByAi === 0) {
     return {
-      assessments: heuristic(),
+      assessments,
       method: 'heuristic',
       model: null,
-      fallbackReason: `AI 평가에 실패해 기본 방식으로 채점했습니다: ${errorText(error)}`,
+      fallbackReason: `AI 평가에 실패해 기본 방식으로 채점했습니다: ${failures[0] ?? '알 수 없는 오류'}`,
     };
   }
+
+  return {
+    assessments,
+    method: 'ai',
+    model,
+    fallbackReason:
+      failures.length > 0
+        ? `${candidates.length}명 중 ${candidates.length - scoredByAi}명은 AI 평가에 실패해 기본 방식으로 채점했습니다: ${failures[0]}`
+        : null,
+  };
+}
+
+/**
+ * Groups candidates so a single request stays inside the model's input limit.
+ *
+ * Sized by characters rather than tokens because no tokenizer for the internal models is
+ * available. For Korean text a token is usually worth more than one character, so treating them
+ * one-for-one is deliberately pessimistic — it errs towards smaller batches rather than a request
+ * the gateway rejects. `AI_SCREENING_BATCH_CHARS` raises it for models with a larger window
+ * (aipro-advanced allows 12,000 input tokens against 6,000 for the others).
+ */
+export function splitIntoBatches(
+  candidates: JustificationCandidate[],
+  limits: { maxChars?: number; maxCount?: number } = {},
+): JustificationCandidate[][] {
+  const maxChars = limits.maxChars ?? env.aiScreeningBatchChars;
+  const maxCount = limits.maxCount ?? env.aiScreeningBatchSize;
+
+  const batches: JustificationCandidate[][] = [];
+  let current: JustificationCandidate[] = [];
+  let currentChars = 0;
+
+  for (const candidate of candidates) {
+    const size = (candidate.justification?.length ?? 0) + PER_CANDIDATE_OVERHEAD_CHARS;
+    // A single oversized justification still goes out alone rather than being dropped; the
+    // gateway's own error is a better signal than silently skipping an applicant.
+    if (current.length > 0 && (currentChars + size > maxChars || current.length >= maxCount)) {
+      batches.push(current);
+      current = [];
+      currentChars = 0;
+    }
+    current.push(candidate);
+    currentChars += size;
+  }
+  if (current.length > 0) batches.push(current);
+
+  return batches;
+}
+
+/** Wrapper markup and the applicant id around each justification in the prompt. */
+const PER_CANDIDATE_OVERHEAD_CHARS = 60;
+
+/**
+ * Output tokens are charged against the same budget as the input, and the guide advises leaving
+ * 200-500 tokens of headroom when a response format is set.
+ */
+function responseTokenBudget(batchSize: number): number {
+  return Math.min(4000, 500 + batchSize * 220);
 }
 
 function buildPrompt(

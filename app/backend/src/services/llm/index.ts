@@ -15,8 +15,7 @@ export interface LlmConfig {
   llmProvider: string;
   anthropicApiKey?: string | undefined;
   openAiApiKey?: string | undefined;
-  aiProApiUrl?: string | undefined;
-  aiProApiToken?: string | undefined;
+  aiProApiKey?: string | undefined;
 }
 
 /**
@@ -38,7 +37,8 @@ export function resolveLlmProvider(config: LlmConfig): LlmProvider | null {
 export function isLlmConfiguredFor(config: LlmConfig): boolean {
   if (config.llmProvider === 'claude') return Boolean(config.anthropicApiKey);
   if (config.llmProvider === 'openai') return Boolean(config.openAiApiKey);
-  if (config.llmProvider === 'ai_pro') return Boolean(config.aiProApiUrl && config.aiProApiToken);
+  // The base URL has a documented default, so only the service key must be supplied.
+  if (config.llmProvider === 'ai_pro') return Boolean(config.aiProApiKey);
   return false;
 }
 

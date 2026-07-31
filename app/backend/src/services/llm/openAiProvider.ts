@@ -5,6 +5,7 @@ const DEFAULT_MODEL = 'gpt-4o';
 const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 
 interface OpenAiChatResponse {
+  id?: string;
   model?: string;
   choices?: Array<{ message?: { content?: string } }>;
   usage?: { prompt_tokens?: number; completion_tokens?: number };
@@ -100,6 +101,7 @@ export class OpenAiProvider implements LlmProvider {
       model: parsedBody.model ?? model,
       inputTokens: parsedBody.usage?.prompt_tokens ?? null,
       outputTokens: parsedBody.usage?.completion_tokens ?? null,
+      requestId: parsedBody.id ?? null,
     };
   }
 }

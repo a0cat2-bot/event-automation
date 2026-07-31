@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { heuristicQuality, screenJustifications } from './justificationScreening.js';
+import {
+  heuristicQuality,
+  screenJustifications,
+  splitIntoBatches,
+} from './justificationScreening.js';
 import { LlmUnavailableError } from './types.js';
 
 /**
@@ -147,6 +151,7 @@ test('an applicant the model omits falls back individually, not the whole run', 
           model: 'stub-model',
           inputTokens: null,
           outputTokens: null,
+          requestId: 'stub-request-id',
         }),
       }),
     },
@@ -183,6 +188,7 @@ test('an out-of-range AI score is clamped rather than trusted', async () => {
           model: 'stub-model',
           inputTokens: null,
           outputTokens: null,
+          requestId: 'stub-request-id',
         }),
       }),
     },
@@ -191,4 +197,128 @@ test('an out-of-range AI score is clamped rather than trusted', async () => {
   const byId = new Map(outcome.assessments.map((a) => [a.applicantId, a.qualityScore]));
   assert.equal(byId.get('high'), 100);
   assert.equal(byId.get('low'), 0);
+});
+
+
+/**
+ * Batching exists because the internal models cap input at 6,000 tokens — every applicant in one
+ * prompt would be rejected outright. These pin the behaviour that matters when a batch goes wrong,
+ * since a partial failure must never lose the applicants that were scored successfully.
+ */
+
+function candidates(count: number, justificationLength = 100) {
+  return Array.from({ length: count }, (_unused, index) => ({
+    applicantId: `a${index}`,
+    justification: '가'.repeat(justificationLength),
+  }));
+}
+
+function stubProvider(
+  complete: (prompt: string) => Promise<{ assessments: unknown[] }>,
+  calls: string[] = [],
+) {
+  return async () => ({
+    name: 'stub',
+    complete: async (options: { prompt: string }) => {
+      calls.push(options.prompt);
+      return {
+        text: '',
+        json: await complete(options.prompt),
+        model: 'aipro-claude-sonnet',
+        inputTokens: null,
+        outputTokens: null,
+        requestId: 'stub-request-id',
+      };
+    },
+  });
+}
+
+test('candidates are split so a request stays inside the model input window', () => {
+  // 30 applicants at 300 characters each is roughly 9,000 characters — well past a 6,000-token
+  // model in one request.
+  const batches = splitIntoBatches(candidates(30, 300), { maxChars: 3500, maxCount: 10 });
+
+  assert.ok(batches.length > 1, 'must not send everything in one request');
+  for (const batch of batches) {
+    const chars = batch.reduce((sum, c) => sum + (c.justification?.length ?? 0) + 60, 0);
+    assert.ok(chars <= 3500, `batch of ${chars} chars exceeds the budget`);
+    assert.ok(batch.length <= 10);
+  }
+  // Every applicant appears exactly once across the batches.
+  const ids = batches.flat().map((c) => c.applicantId);
+  assert.equal(ids.length, 30);
+  assert.equal(new Set(ids).size, 30);
+});
+
+test('a single oversized justification is still sent rather than dropped', () => {
+  const batches = splitIntoBatches(
+    [{ applicantId: 'huge', justification: '가'.repeat(9000) }],
+    { maxChars: 3500, maxCount: 10 },
+  );
+
+  assert.equal(batches.length, 1);
+  assert.equal(batches[0]?.[0]?.applicantId, 'huge');
+});
+
+test('a failed batch falls back only for its own applicants', async () => {
+  let call = 0;
+  const resolveProvider = stubProvider(async (prompt) => {
+    call += 1;
+    if (call === 2) throw new LlmUnavailableError('gateway timeout');
+    // Score whichever applicants this batch contains.
+    const ids = [...prompt.matchAll(/id="([^"]+)"/g)].map((m) => m[1]);
+    return { assessments: ids.map((id) => ({ applicant_id: id, score: 80, rationale: '구체적' })) };
+  });
+
+  const outcome = await screenJustifications(
+    candidates(25, 300),
+    { programName: 'p', programDescription: null },
+    { resolveProvider },
+  );
+
+  // Some applicants were scored by AI, so the run is reported as AI-assisted...
+  assert.equal(outcome.method, 'ai');
+  // ...but the partial degradation is surfaced rather than hidden.
+  assert.match(outcome.fallbackReason ?? '', /gateway timeout/);
+
+  const byMethod = outcome.assessments.reduce<Record<string, number>>((acc, a) => {
+    acc[a.method] = (acc[a.method] ?? 0) + 1;
+    return acc;
+  }, {});
+  assert.ok((byMethod.ai ?? 0) > 0, 'successful batches must keep their AI scores');
+  assert.ok((byMethod.heuristic ?? 0) > 0, 'the failed batch must fall back');
+  assert.equal(outcome.assessments.length, 25, 'every applicant is still ranked');
+});
+
+test('every batch failing reports a plain heuristic run', async () => {
+  const resolveProvider = stubProvider(async () => {
+    throw new LlmUnavailableError('gateway unreachable');
+  });
+
+  const outcome = await screenJustifications(
+    candidates(25, 300),
+    { programName: 'p', programDescription: null },
+    { resolveProvider },
+  );
+
+  assert.equal(outcome.method, 'heuristic');
+  assert.equal(outcome.model, null);
+  assert.match(outcome.fallbackReason ?? '', /gateway unreachable/);
+  assert.ok(outcome.assessments.every((a) => a.method === 'heuristic'));
+});
+
+test('a small run still goes out as a single request', async () => {
+  const calls: string[] = [];
+  const resolveProvider = stubProvider(async (prompt) => {
+    const ids = [...prompt.matchAll(/id="([^"]+)"/g)].map((m) => m[1]);
+    return { assessments: ids.map((id) => ({ applicant_id: id, score: 70, rationale: 'ok' })) };
+  }, calls);
+
+  await screenJustifications(
+    candidates(3, 100),
+    { programName: 'p', programDescription: null },
+    { resolveProvider },
+  );
+
+  assert.equal(calls.length, 1, 'batching must not fragment a run that already fits');
 });

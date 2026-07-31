@@ -55,20 +55,13 @@ test('a key for one provider does not configure another', () => {
   );
 });
 
-test('ai_pro provider requires both the endpoint and the token', () => {
-  const urlOnly = config({ llmProvider: 'ai_pro', aiProApiUrl: 'https://internal.example/v1/chat' });
-  assert.equal(isLlmConfiguredFor(urlOnly), false);
+test('ai_pro provider requires a service key', () => {
+  // The endpoint has a documented default, so the key alone decides whether it is usable.
+  assert.equal(isLlmConfiguredFor(config({ llmProvider: 'ai_pro' })), false);
 
-  const tokenOnly = config({ llmProvider: 'ai_pro', aiProApiToken: 'token' });
-  assert.equal(isLlmConfiguredFor(tokenOnly), false);
-
-  const both = config({
-    llmProvider: 'ai_pro',
-    aiProApiUrl: 'https://internal.example/v1/chat',
-    aiProApiToken: 'token',
-  });
-  assert.equal(isLlmConfiguredFor(both), true);
-  assert.equal(resolveLlmProvider(both)?.name, 'ai_pro');
+  const withKey = config({ llmProvider: 'ai_pro', aiProApiKey: 'svc-key' });
+  assert.equal(isLlmConfiguredFor(withKey), true);
+  assert.equal(resolveLlmProvider(withKey)?.name, 'ai_pro');
 });
 
 test('an unrecognised provider name fails loudly instead of silently disabling AI', () => {
@@ -79,7 +72,7 @@ test('an unrecognised provider name fails loudly instead of silently disabling A
   assert.equal(isLlmConfiguredFor(config({ llmProvider: 'gpt' })), false);
 });
 
-test('ai_pro without an endpoint fails on use, not at construction', async () => {
+test('ai_pro without a service key fails on use, not at construction', async () => {
   const provider = resolveLlmProvider(config({ llmProvider: 'ai_pro' }));
   assert.ok(provider);
 
@@ -87,7 +80,7 @@ test('ai_pro without an endpoint fails on use, not at construction', async () =>
     () => provider.complete({ system: 'test', prompt: 'test' }),
     (error: unknown) => {
       assert.ok(error instanceof LlmUnavailableError);
-      assert.match((error as Error).message, /AI_PRO_API_URL is required/);
+      assert.match((error as Error).message, /AI_PRO_API_KEY is required/);
       return true;
     },
   );

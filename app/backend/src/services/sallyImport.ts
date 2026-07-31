@@ -3,8 +3,8 @@ import { readFileSync } from 'node:fs';
 
 import * as XLSX from 'xlsx';
 
-import { env } from '../config/env.js';
 import { pool } from '../db/pool.js';
+import { knoxIdToEmail } from '../utils/knoxId.js';
 import {
   stageUpload,
   stagedUploadTtlMs,
@@ -30,23 +30,6 @@ export interface SallyStagedApplicantRecord {
   justification: string;
   score: null;
   issues: SourceIssue[];
-}
-
-/**
- * Expands a Knox ID into the email address applicants are keyed by.
- *
- * Sally collects "Knox ID / 성명" in question 1 and leaves its own Email column blank, but letters
- * are delivered by email, so the bare ID has to become an address. A value that already contains
- * "@" is taken as-is; otherwise KNOX_EMAIL_DOMAIN is appended. Returns an empty string when the ID
- * has no domain and none is configured — the caller turns that into a row-level error rather than
- * inventing an address.
- */
-export function knoxIdToEmail(knoxId: string): string {
-  const trimmed = knoxId.trim();
-  if (!trimmed) return '';
-  if (trimmed.includes('@')) return trimmed;
-  const domain = env.knoxEmailDomain?.trim().replace(/^@/, '');
-  return domain ? `${trimmed}@${domain}` : '';
 }
 
 export class SallyImportParseError extends Error {

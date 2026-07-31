@@ -1,4 +1,5 @@
 import { env } from '../../config/env.js';
+import { knoxIdToEmail } from '../../utils/knoxId.js';
 import type { IdentityClaim, IdentityProvider } from './types.js';
 
 function readHeader(
@@ -12,24 +13,32 @@ function readHeader(
 }
 
 /**
- * Takes the caller's identity from headers injected by the corporate SSO reverse proxy.
+ * Takes the caller's identity from headers injected by the corporate SSO gateway.
+ *
+ * Header names follow the AI Pro developer guide, which documents the gateway verifying the JWT
+ * and passing `X-User-ID` and `X-User-Roles` downstream. They remain configurable because that
+ * guide describes the AI Pro gateway specifically, and this app may sit behind a different one.
+ *
+ * `X-User-Roles` is deliberately NOT consumed. The roles it carries are corporate-wide, whereas
+ * this app's roles (admin / coordinator / viewer) and its business-unit scoping are
+ * application-specific and live in the users table. Taking authorization from the gateway would
+ * mean two disagreeing sources of truth for who may run a selection.
  *
  * SECURITY: this provider trusts its headers completely, which is only safe when the application
- * is reachable *exclusively* through the proxy and the proxy strips these headers from inbound
+ * is reachable *exclusively* through the gateway and the gateway strips these headers from inbound
  * client requests. If the backend port is directly reachable, anyone can impersonate anyone by
- * setting a header. Do not enable this provider until that network path is confirmed.
- *
- * The default header names below (`X-Forwarded-User` / `X-Forwarded-Email` / `X-Forwarded-
- * DisplayName`) are a BEST-GUESS PLACEHOLDER, not a confirmed internal SSO contract — the same
- * staging approach used by KnoxPortalProvider. Override them with AUTH_SSO_*_HEADER once the real
- * gateway's headers are known.
+ * setting a header.
  */
 export class SsoHeaderProvider implements IdentityProvider {
   readonly name = 'sso_header';
 
   resolveIdentity(headers: Record<string, string | string[] | undefined>): IdentityClaim | null {
-    const email =
+    const raw =
       readHeader(headers, env.authSsoEmailHeader) ?? readHeader(headers, env.authSsoUserHeader);
+    if (!raw) return null;
+
+    // The gateway may pass a bare Knox ID rather than a full address; users are keyed by email.
+    const email = knoxIdToEmail(raw);
     if (!email) return null;
 
     return {

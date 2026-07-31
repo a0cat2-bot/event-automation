@@ -17,9 +17,11 @@ export const env = {
   knoxPortalAccount: process.env.KNOX_PORTAL_ACCOUNT || undefined,
   // Access control. `disabled` keeps the previous no-auth behaviour. See services/auth.
   authProvider: process.env.AUTH_PROVIDER || 'disabled',
-  authSsoEmailHeader: process.env.AUTH_SSO_EMAIL_HEADER || 'X-Forwarded-Email',
-  authSsoUserHeader: process.env.AUTH_SSO_USER_HEADER || 'X-Forwarded-User',
-  authSsoNameHeader: process.env.AUTH_SSO_NAME_HEADER || 'X-Forwarded-DisplayName',
+  // Header names per the AI Pro guide's gateway contract (X-User-ID / X-User-Roles). Configurable
+  // because this app may sit behind a different gateway.
+  authSsoEmailHeader: process.env.AUTH_SSO_EMAIL_HEADER || 'X-User-Email',
+  authSsoUserHeader: process.env.AUTH_SSO_USER_HEADER || 'X-User-ID',
+  authSsoNameHeader: process.env.AUTH_SSO_NAME_HEADER || 'X-User-Name',
   // Comma-separated emails always granted admin, so a fresh deployment is never locked out.
   authBootstrapAdmins: process.env.AUTH_BOOTSTRAP_ADMINS || '',
   // AI features are off unless a deployment opts in. See services/llm.
@@ -28,6 +30,14 @@ export const env = {
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || undefined,
   openAiApiKey: process.env.OPENAI_API_KEY || undefined,
   openAiBaseUrl: process.env.OPENAI_BASE_URL || undefined,
+  // AI Pro. The base URL defaults to the documented endpoint, so only the service key is required.
   aiProApiUrl: process.env.AI_PRO_API_URL || undefined,
-  aiProApiToken: process.env.AI_PRO_API_TOKEN || undefined,
+  aiProApiKey: process.env.AI_PRO_API_KEY || undefined,
+  aiProApiVersion: process.env.AI_PRO_API_VERSION || 'v1',
+  // 'openai' (default) or 'anthropic' — selects which request/response shape AI Pro is asked for.
+  aiProModelStyle: process.env.AI_PRO_MODEL_STYLE || 'openai',
+  // Justification screening batches requests to stay inside the model's input window. Defaults
+  // suit a 6,000-token model; raise them for one with a larger window (e.g. aipro-advanced).
+  aiScreeningBatchChars: Number(process.env.AI_SCREENING_BATCH_CHARS ?? 3500),
+  aiScreeningBatchSize: Number(process.env.AI_SCREENING_BATCH_SIZE ?? 10),
 } as const;
