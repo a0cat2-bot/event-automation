@@ -8,6 +8,7 @@ import { pool } from '../db/pool.js';
 import { validate } from '../middleware/validate.js';
 import { programParams, reportParams } from '../schemas/common.js';
 import { reportGenerateBody } from '../schemas/contracts.js';
+import { analyseSurveyVoc, type VocAnalysis } from '../services/llm/surveyVoc.js';
 import { getActorName } from '../utils/actor.js';
 import { getBrowser } from '../utils/browser.js';
 import { uploadsRoot } from '../utils/storage.js';
@@ -81,6 +82,43 @@ interface ReportContent {
   surveyResults: SurveyResultReportRow[];
   gifts: GiftReportRow[];
   sections: ReportSections;
+  /** Present only when the AI feature is on and the call succeeded. */
+  voc: VocAnalysis | null;
+}
+
+
+/**
+ * Renders the theme analysis. Quotes are reproduced exactly as submitted — the analysis groups and
+ * counts them but never rewrites them, so a reader can treat each line as the employee's own words.
+ */
+function vocSection(voc: VocAnalysis): string {
+  const lines: string[] = ['## 제언 분석'];
+
+  lines.push(
+    `총 ${voc.totalResponses}건 중 ${voc.classifiedCount}건 분류` +
+      (voc.excludedCount > 0 ? ` · 무응답 ${voc.excludedCount}건 제외` : ''),
+    '',
+    '> 제언은 제출된 원문 그대로이며 요약하지 않았습니다.',
+  );
+
+  for (const [sentiment, heading] of [
+    ['positive', '### 긍정적 제언'],
+    ['negative', '### 부정적 및 개선 제언'],
+  ] as const) {
+    const groups = voc.groups.filter((group) => group.sentiment === sentiment);
+    if (groups.length === 0) continue;
+
+    lines.push('', heading);
+    for (const group of groups) {
+      lines.push('', `#### ■ ${group.keyword} (${group.count}건)`);
+      for (const response of group.responses) {
+        lines.push(`* "${response.replace(/\r?\n/g, ' ')}"`);
+      }
+    }
+  }
+
+  lines.push('', `_분석 모델: ${voc.model}${voc.requestId ? ` · 요청 ${voc.requestId}` : ''}_`);
+  return lines.join('\n');
 }
 
 function displayValue(value: string | number | null): string {
@@ -149,6 +187,8 @@ ${rows.length > 0 ? rows.join('\n') : '| — | No participants | — | — | —
 | Name | Satisfaction Score | Feedback |
 |---|---:|---|
 ${rows.length > 0 ? rows.join('\n') : '| No completed surveys | — | — |'}`);
+
+    if (content.voc) sections.push(vocSection(content.voc));
   }
 
   if (content.sections.gifts) {
@@ -407,6 +447,17 @@ reportsRouter.post(
           ).rows
         : [];
 
+      // Null when the AI feature is off or the call fails; the report then omits the section
+      // rather than presenting a different kind of analysis under the same heading.
+      const voc = sections.surveyResults
+        ? await analyseSurveyVoc(
+            surveyResults
+              .map((result, index) => ({ index, text: result.feedback_text ?? '' }))
+              .filter((response) => response.text.trim() !== ''),
+            { programName: program.name },
+          )
+        : null;
+
       const reportContent: ReportContent = {
         program,
         summary,
@@ -414,6 +465,7 @@ reportsRouter.post(
         surveyResults,
         gifts,
         sections,
+        voc,
       };
       const reportId = randomUUID();
       let content: string | null = null;
