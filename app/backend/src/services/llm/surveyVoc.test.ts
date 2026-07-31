@@ -167,3 +167,32 @@ test('filler is recognised regardless of surrounding whitespace or case', () => 
     assert.equal(isSubstantive(real), true, `${real} should be kept`);
   }
 });
+
+test('contact details are stripped from what the model sees, not from the quote', async () => {
+  // Data Privacy approval is unavailable, so outbound text must carry no contact details. The
+  // report still has to quote the response verbatim, which works because quotes are read from the
+  // stored row by index rather than from anything the model returned.
+  const raw = '강사님 좋았어요. 문의는 kim@samsung.com 010-1234-5678 로 주세요';
+  let promptSeenByModel = '';
+
+  const analysis = await analyseSurveyVoc([{ index: 0, text: raw }], CONTEXT, {
+    resolveProvider: async () => ({
+      name: 'stub',
+      complete: async (options: { prompt: string }): Promise<LlmCompletion> => {
+        promptSeenByModel = options.prompt;
+        return {
+          text: '',
+          json: { classifications: [{ index: 0, sentiment: 'positive', keyword: '강사' }] },
+          model: 'aipro-claude-sonnet',
+          inputTokens: null,
+          outputTokens: null,
+          requestId: 'req-voc',
+        };
+      },
+    }),
+  });
+
+  assert.ok(!promptSeenByModel.includes('kim@samsung.com'), 'email must not reach the model');
+  assert.ok(!promptSeenByModel.includes('010-1234-5678'), 'phone must not reach the model');
+  assert.equal(analysis?.groups[0]?.responses[0], raw, 'the quote stays byte-identical');
+});

@@ -322,3 +322,47 @@ test('a small run still goes out as a single request', async () => {
 
   assert.equal(calls.length, 1, 'batching must not fragment a run that already fits');
 });
+
+test('contact details are stripped from the prompt but still scored by the fallback', async () => {
+  const raw = '안전관리에 관심이 많습니다. 연락처는 010-1234-5678, hong@samsung.com 입니다.';
+  let promptSeenByModel = '';
+
+  const outcome = await screenJustifications(
+    [{ applicantId: 'a1', justification: raw }],
+    { programName: '테스트', programDescription: null },
+    {
+      resolveProvider: async () => ({
+        name: 'stub',
+        complete: async (options: { prompt: string }) => {
+          promptSeenByModel = options.prompt;
+          return {
+            text: '',
+            json: { assessments: [{ applicant_id: 'a1', score: 70, rationale: '구체적임' }] },
+            model: 'aipro-claude-sonnet',
+            inputTokens: null,
+            outputTokens: null,
+            requestId: 'req-1',
+          };
+        },
+      }),
+    },
+  );
+
+  assert.ok(!promptSeenByModel.includes('hong@samsung.com'), 'email must not reach the model');
+  assert.ok(!promptSeenByModel.includes('010-1234-5678'), 'phone must not reach the model');
+  assert.ok(promptSeenByModel.includes('안전관리에 관심이 많습니다'), 'the substance survives');
+  assert.equal(outcome.method, 'ai');
+
+  // The heuristic runs locally on the stored text, so redaction must not reach it — a masked token
+  // would change the length and variety signals it scores on.
+  const withoutAi = await screenJustifications(
+    [{ applicantId: 'a1', justification: raw }],
+    { programName: '테스트', programDescription: null },
+    { resolveProvider: async () => null },
+  );
+  assert.equal(
+    withoutAi.assessments[0]?.qualityScore,
+    heuristicQuality(raw).qualityScore,
+    'the fallback scores the unredacted original',
+  );
+});

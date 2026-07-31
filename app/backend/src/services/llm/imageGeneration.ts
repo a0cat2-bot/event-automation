@@ -102,7 +102,7 @@ export async function generateCharacterImage(
       );
     }
     throw new LlmUnavailableError(
-      'AI Pro 이미지 생성 요청에 실패했습니다. 사내망 또는 VPN 연결을 확인하세요.',
+      'AI Pro 이미지 생성 요청에 실패했습니다. 네트워크 연결과 API 키를 확인하세요.',
       { cause: error },
     );
   }

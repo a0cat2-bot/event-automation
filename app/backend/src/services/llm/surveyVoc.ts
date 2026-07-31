@@ -1,5 +1,6 @@
 import { env } from '../../config/env.js';
 import { getProviderForFeature } from './featureFlags.js';
+import { redactPersonalData } from '../../utils/redaction.js';
 import { LlmUnavailableError, type LlmProvider } from './types.js';
 
 /**
@@ -260,7 +261,9 @@ function buildPrompt(
     '',
     '아래 제언을 각각 분류하세요.',
     '',
-    ...responses.map((response) => `[${response.index}] ${response.text}`),
+    // Only the model's copy is redacted. Quotes are assembled from the stored original by index,
+    // so the report still shows exactly what the respondent wrote.
+    ...responses.map((response) => `[${response.index}] ${redactPersonalData(response.text)}`),
   ]
     .filter((line) => line !== null)
     .join('\n');

@@ -1,5 +1,6 @@
 import { env } from '../../config/env.js';
 import { getProviderForFeature } from './featureFlags.js';
+import { redactPersonalData } from '../../utils/redaction.js';
 import { LlmUnavailableError, type LlmProvider } from './types.js';
 
 export interface JustificationCandidate {
@@ -238,11 +239,14 @@ function buildPrompt(
   candidates: JustificationCandidate[],
   context: { programName: string; programDescription: string | null },
 ): string {
+  // Redacted here rather than at the caller, so the heuristic fallback — which never reaches this
+  // function — keeps scoring the text the applicant actually wrote.
   const entries = candidates
-    .map(
-      (candidate) =>
-        `<지원자 id="${candidate.applicantId}">\n${candidate.justification?.trim() || '(작성 내용 없음)'}\n</지원자>`,
-    )
+    .map((candidate) => {
+      const justification = candidate.justification?.trim();
+      const body = justification ? redactPersonalData(justification) : '(작성 내용 없음)';
+      return `<지원자 id="${candidate.applicantId}">\n${body}\n</지원자>`;
+    })
     .join('\n\n');
 
   return [

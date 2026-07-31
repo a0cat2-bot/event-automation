@@ -6,12 +6,20 @@ import { LlmUnavailableError, type LlmCompletion, type LlmCompletionOptions, typ
 /**
  * Routes LLM calls through the internal AI Pro gateway.
  *
- * Implemented against the AI Pro API developer guide (v1). Unlike the external providers this is
- * the only one permitted to carry real applicant data: the platform runs in a no-retain, no-train
- * mode, deletes request bodies immediately, and keeps only metadata.
+ * Implemented against the AI Pro API developer guide (v1). This is the only provider the company
+ * permits an application to call: external enterprise AI may not be used over an API at all. The
+ * platform runs in a no-retain, no-train mode, deletes request bodies immediately, and keeps only
+ * metadata.
  *
- * Reachability: the endpoint is internal-network only (VPC). A developer machine needs corporate
- * VPN or the ZeroTrust gateway, otherwise every call fails at the network layer.
+ * Personal data still must not be sent. Sending it requires Data Privacy team approval, which is
+ * not available to this app, so employee-written free text is redacted before it goes out — see
+ * utils/redaction.ts.
+ *
+ * Reachability: AI Pro is a public-cloud HTTPS service, so no VPN is required to reach it.
+ *
+ * Tool calling is not supported by the platform. Nothing here needs it: the model returns
+ * structured JSON and this application executes every database read, write, and send itself, which
+ * is also what keeps AI output reviewable rather than self-acting.
  */
 
 const DEFAULT_BASE_URL = 'https://aipro.samsung.net/v1';
@@ -139,7 +147,7 @@ export class AiProProvider implements LlmProvider {
         );
       }
       throw new LlmUnavailableError(
-        'AI Pro API request failed. The endpoint is internal-network only — check VPN or ZeroTrust connectivity.',
+        'AI Pro API request failed. Check network connectivity to the gateway and the service key.',
         { cause: error },
       );
     }
