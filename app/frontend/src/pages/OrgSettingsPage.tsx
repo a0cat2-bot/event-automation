@@ -1,6 +1,7 @@
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react';
 
 import {
+  generateOrgSettingsCharacterImage,
   getOrgSettings,
   type OrgSettings,
   updateOrgSettings,
@@ -27,6 +28,8 @@ export function OrgSettingsPage() {
   const [imageMessage, setImageMessage] = useState<string | null>(null);
   const [imageError, setImageError] = useState<string | null>(null);
   const [businessUnitError, setBusinessUnitError] = useState<string | null>(null);
+  const [imageDescription, setImageDescription] = useState('');
+  const [isGenerating, setIsGenerating] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -141,6 +144,32 @@ export function OrgSettingsPage() {
       );
     } finally {
       setIsUploading(false);
+    }
+  }
+
+  async function handleImageGenerate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const description = imageDescription.trim();
+    if (!description) return;
+
+    setIsGenerating(true);
+    setImageMessage(null);
+    setImageError(null);
+
+    try {
+      const { org_settings: nextSettings } = await generateOrgSettingsCharacterImage(
+        description,
+        selectedBusinessUnit,
+      );
+      setSettings(nextSettings);
+      setDisplayName(nextSettings.org_display_name);
+      setImageMessage('생성된 이미지가 저장되었습니다. 마음에 들지 않으면 다시 생성하세요.');
+    } catch (error) {
+      setImageError(
+        error instanceof Error ? error.message : '캐릭터 이미지를 생성하지 못했습니다.',
+      );
+    } finally {
+      setIsGenerating(false);
     }
   }
 
@@ -262,24 +291,54 @@ export function OrgSettingsPage() {
                     onChange={handleImageChange}
                   />
                 </label>
-                {imageError ? (
-                  <p className="form-error" role="alert">
-                    {imageError}
-                  </p>
-                ) : null}
-                {imageMessage ? (
-                  <strong className="save-success" aria-live="polite">
-                    {imageMessage}
-                  </strong>
-                ) : null}
                 <button
                   className="button button--primary"
                   type="submit"
-                  disabled={isUploading || !characterImage}
+                  disabled={isUploading || isGenerating || !characterImage}
                 >
                   {isUploading ? '업로드 중…' : '이미지 업로드'}
                 </button>
               </form>
+
+              {/* AI draws only this illustration; letter text stays rendered from data. */}
+              <form className="stack-form org-image-form" onSubmit={handleImageGenerate}>
+                <label>
+                  AI로 만들기
+                  <input
+                    type="text"
+                    value={imageDescription}
+                    onChange={(event) => {
+                      setImageDescription(event.target.value);
+                      setImageMessage(null);
+                      setImageError(null);
+                    }}
+                    maxLength={300}
+                    placeholder="예: 청진기를 든 파란색 곰 캐릭터"
+                  />
+                </label>
+                <p className="field-hint">
+                  글자가 들어가지 않은 캐릭터 그림만 생성합니다. 아래 AI 설정에서 캐릭터 이미지
+                  생성이 켜져 있어야 합니다.
+                </p>
+                <button
+                  className="button button--secondary"
+                  type="submit"
+                  disabled={isGenerating || isUploading || !imageDescription.trim()}
+                >
+                  {isGenerating ? '생성 중… (최대 1분)' : 'AI로 생성'}
+                </button>
+              </form>
+
+              {imageError ? (
+                <p className="form-error" role="alert">
+                  {imageError}
+                </p>
+              ) : null}
+              {imageMessage ? (
+                <strong className="save-success" aria-live="polite">
+                  {imageMessage}
+                </strong>
+              ) : null}
             </section>
           </div>
         </>

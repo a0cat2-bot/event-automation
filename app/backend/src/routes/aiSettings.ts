@@ -34,6 +34,7 @@ const updateBody = z
     justification_screening: z.boolean().optional(),
     letter_copy: z.boolean().optional(),
     survey_summary: z.boolean().optional(),
+    character_image: z.boolean().optional(),
   })
   .refine((body) => Object.keys(body).length > 0, { message: '변경할 항목이 없습니다.' });
 

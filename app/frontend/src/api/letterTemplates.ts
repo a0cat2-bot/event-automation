@@ -311,6 +311,28 @@ export function uploadOrgSettingsCharacterImage(
   });
 }
 
+export type GeneratedCharacterImageResponse = OrgSettingsResponse & {
+  generated_by: { model: string; request_id: string | null };
+};
+
+/**
+ * Asks AI Pro to draw the character illustration. Only the artwork is generated — the letter itself
+ * is still rendered from data — and the result is saved exactly like an uploaded image.
+ */
+export function generateOrgSettingsCharacterImage(
+  description: string,
+  businessUnit = '',
+): Promise<GeneratedCharacterImageResponse> {
+  return apiRequest<GeneratedCharacterImageResponse>(
+    orgSettingsPath('/character-image/generate', businessUnit),
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ description }),
+    },
+  );
+}
+
 export type LetterCopyDraftResponse = {
   body_text: string;
   generated_by: { model: string; request_id: string | null };

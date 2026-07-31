@@ -9,6 +9,8 @@ import { z } from 'zod';
 
 import { pool } from '../db/pool.js';
 import { validate } from '../middleware/validate.js';
+import { generateCharacterImage } from '../services/llm/imageGeneration.js';
+import { LlmUnavailableError } from '../services/llm/types.js';
 import { getActorName } from '../utils/actor.js';
 import { uploadsRoot } from '../utils/storage.js';
 
@@ -194,6 +196,102 @@ orgSettingsRouter.post(
       );
 
       response.json({ org_settings: result.rows[0] });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+const characterImageGenerateBody = z.object({
+  description: z.string().trim().min(2).max(300),
+});
+
+/**
+ * Generates the letter character illustration instead of requiring one to be uploaded.
+ *
+ * Only the illustration — the letter itself stays rendered from data by the HTML pipeline, because
+ * the image model cannot render legible Korean and a generated letter would carry unverifiable
+ * dates and mangled text. The result is written to the same directory and column as an uploaded
+ * image, so everything downstream treats the two identically.
+ */
+orgSettingsRouter.post(
+  '/org-settings/character-image/generate',
+  validate({ query: orgSettingsQuery, body: characterImageGenerateBody }),
+  async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const { business_unit: businessUnit } = orgSettingsQuery.parse(request.query);
+      const { description } = characterImageGenerateBody.parse(request.body);
+
+      let generated;
+      try {
+        generated = await generateCharacterImage(description);
+      } catch (error) {
+        if (error instanceof LlmUnavailableError) {
+          response.status(502).json({ error: error.message });
+          return;
+        }
+        throw error;
+      }
+
+      if (!generated) {
+        response.status(503).json({
+          error:
+            'AI 이미지 생성을 사용할 수 없습니다. 조직 설정에서 기능이 켜져 있는지 확인하거나, 이미지를 직접 업로드하세요.',
+        });
+        return;
+      }
+
+      const contentDigest = createHash('sha256').update(generated.data).digest('hex').slice(0, 20);
+      const filename = `character-ai-${contentDigest}-${randomUUID()}.png`;
+      const directory = join(uploadsRoot, 'org-settings');
+      await mkdir(directory, { recursive: true });
+      await writeFile(join(directory, filename), generated.data, { flag: 'wx' });
+
+      const characterImageUrl = `/uploads/org-settings/${filename}`;
+      const result = await pool.query<OrgSettingsRow>(
+        `INSERT INTO org_settings
+           (business_unit, character_image_url, org_display_name, default_coordinator_name,
+            default_coordinator_contact, updated_by)
+         VALUES (
+           $1,
+           $2,
+           COALESCE(
+             (SELECT org_display_name FROM org_settings WHERE business_unit = ''),
+             'Your Organization'
+           ),
+           (SELECT default_coordinator_name FROM org_settings WHERE business_unit = ''),
+           (SELECT default_coordinator_contact FROM org_settings WHERE business_unit = ''),
+           $3
+         )
+         ON CONFLICT (business_unit) DO UPDATE SET
+           character_image_url = EXCLUDED.character_image_url,
+           updated_at = NOW(),
+           updated_by = EXCLUDED.updated_by
+         RETURNING business_unit, character_image_url, org_display_name, default_coordinator_name,
+                   default_coordinator_contact, updated_at, updated_by`,
+        [businessUnit, characterImageUrl, getActorName(request)],
+      );
+
+      await pool.query(
+        `INSERT INTO audit_logs
+           (actor_name, action, entity_type, entity_id, details, ip_address)
+         VALUES ($1, 'character_image_generated', 'org_settings', NULL, $2::jsonb, $3)`,
+        [
+          getActorName(request),
+          JSON.stringify({
+            business_unit: businessUnit,
+            model: generated.model,
+            request_id: generated.requestId,
+            description,
+          }),
+          request.ip || null,
+        ],
+      );
+
+      response.json({
+        org_settings: result.rows[0],
+        generated_by: { model: generated.model, request_id: generated.requestId },
+      });
     } catch (error) {
       next(error);
     }

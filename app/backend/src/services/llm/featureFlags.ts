@@ -6,6 +6,7 @@ export const AI_FEATURES = [
   'justification_screening',
   'letter_copy',
   'survey_summary',
+  'character_image',
 ] as const;
 export type AiFeature = (typeof AI_FEATURES)[number];
 
@@ -15,6 +16,7 @@ interface AiSettingsRow {
   justification_screening_enabled: boolean;
   letter_copy_enabled: boolean;
   survey_summary_enabled: boolean;
+  character_image_enabled: boolean;
   updated_at: Date;
   updated_by: string | null;
 }
@@ -23,6 +25,7 @@ const ALL_OFF: AiFeatureFlags = {
   justification_screening: false,
   letter_copy: false,
   survey_summary: false,
+  character_image: false,
 };
 
 function toFlags(row: AiSettingsRow): AiFeatureFlags {
@@ -30,6 +33,7 @@ function toFlags(row: AiSettingsRow): AiFeatureFlags {
     justification_screening: row.justification_screening_enabled,
     letter_copy: row.letter_copy_enabled,
     survey_summary: row.survey_summary_enabled,
+    character_image: row.character_image_enabled,
   };
 }
 
@@ -40,7 +44,7 @@ export async function readAiSettings(): Promise<{
 }> {
   const { rows } = await pool.query<AiSettingsRow>(
     `SELECT justification_screening_enabled, letter_copy_enabled, survey_summary_enabled,
-            updated_at, updated_by
+            character_image_enabled, updated_at, updated_by
        FROM ai_settings
       WHERE id = TRUE`,
   );
@@ -63,15 +67,17 @@ export async function writeAiSettings(
         SET justification_screening_enabled = COALESCE($1, justification_screening_enabled),
             letter_copy_enabled = COALESCE($2, letter_copy_enabled),
             survey_summary_enabled = COALESCE($3, survey_summary_enabled),
+            character_image_enabled = COALESCE($4, character_image_enabled),
             updated_at = NOW(),
-            updated_by = $4
+            updated_by = $5
       WHERE id = TRUE
   RETURNING justification_screening_enabled, letter_copy_enabled, survey_summary_enabled,
-            updated_at, updated_by`,
+            character_image_enabled, updated_at, updated_by`,
     [
       updates.justification_screening ?? null,
       updates.letter_copy ?? null,
       updates.survey_summary ?? null,
+      updates.character_image ?? null,
       actorName,
     ],
   );

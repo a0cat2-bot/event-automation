@@ -1,6 +1,11 @@
 import { apiRequest } from './client';
 
-export const AI_FEATURES = ['justification_screening', 'letter_copy', 'survey_summary'] as const;
+export const AI_FEATURES = [
+  'justification_screening',
+  'letter_copy',
+  'survey_summary',
+  'character_image',
+] as const;
 export type AiFeature = (typeof AI_FEATURES)[number];
 
 export type AiFeatureFlags = Record<AiFeature, boolean>;
@@ -18,14 +23,18 @@ export type AiSettings = {
 export const AI_FEATURE_LABELS: Record<AiFeature, string> = {
   justification_screening: '서술형 지원서 심사 보조',
   letter_copy: '레터 문구 초안 생성',
-  survey_summary: '설문 자유응답 요약',
+  survey_summary: '설문 자유응답 분류',
+  character_image: '캐릭터 이미지 생성',
 };
 
 export const AI_FEATURE_DESCRIPTIONS: Record<AiFeature, string> = {
   justification_screening:
     '서술형 지원서를 평가해 점수와 판단 근거를 제시합니다. 최종 선정은 코디네이터가 확정합니다.',
   letter_copy: '레터 본문 초안을 만들어 줍니다. 발송 전에 사람이 수정할 수 있습니다.',
-  survey_summary: '설문 자유응답을 주제별로 요약해 결과 보고서에 넣습니다.',
+  survey_summary:
+    '설문 자유응답을 긍정·개선 주제별로 분류해 결과 보고서에 넣습니다. 응답 원문은 고치지 않고 그대로 인용합니다.',
+  character_image:
+    '레터에 쓰는 캐릭터 그림을 생성합니다. 레터 본문과 일정은 코드가 데이터로 렌더링하며, AI는 그림만 만듭니다.',
 };
 
 export function getAiSettings(signal?: AbortSignal): Promise<AiSettings> {
