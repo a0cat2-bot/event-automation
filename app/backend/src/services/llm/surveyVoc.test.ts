@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { analyseSurveyVoc, isSubstantive, type VocResponse } from './surveyVoc.js';
+import {
+  analyseSurveyVoc,
+  buildAgentVocAnalysis,
+  isSubstantive,
+  type VocResponse,
+} from './surveyVoc.js';
 import { LlmUnavailableError, type LlmCompletion } from './types.js';
 
 /**
@@ -195,4 +200,67 @@ test('contact details are stripped from what the model sees, not from the quote'
   assert.ok(!promptSeenByModel.includes('kim@samsung.com'), 'email must not reach the model');
   assert.ok(!promptSeenByModel.includes('010-1234-5678'), 'phone must not reach the model');
   assert.equal(analysis?.groups[0]?.responses[0], raw, 'the quote stays byte-identical');
+});
+
+test('an agent groups responses but still cannot alter a quote', async () => {
+  // The whole point of index-only classification is that it holds regardless of who classifies.
+  // An agent working through MCP gets no more ability to paraphrase than the model does.
+  const texts = ['강사님이  넘  치녈하셨어요!!', '시간이 짧아 아쉬웠어요'];
+  const analysis = buildAgentVocAnalysis(indexed(texts), [
+    { index: 0, sentiment: 'positive', keyword: '강사' },
+    { index: 1, sentiment: 'negative', keyword: '시간' },
+  ]);
+
+  assert.deepEqual(
+    analysis?.groups.flatMap((group) => group.responses).sort(),
+    [...texts].sort(),
+    'quotes come from the stored rows, typos included',
+  );
+  assert.equal(analysis?.analysedBy, 'agent');
+  assert.equal(analysis?.model, null, 'this app never saw a model on the agent path');
+});
+
+test('an agent run is labelled agent, never ai', async () => {
+  // Collapsing the two would let a report claim the app classified something it did not.
+  const viaAi = await analyseSurveyVoc(indexed(['좋았습니다']), CONTEXT, {
+    resolveProvider: stubClassifier([{ index: 0, sentiment: 'positive', keyword: '만족' }]),
+  });
+  assert.equal(viaAi?.analysedBy, 'ai');
+
+  const viaAgent = buildAgentVocAnalysis(indexed(['좋았습니다']), [
+    { index: 0, sentiment: 'positive', keyword: '만족' },
+  ]);
+  assert.equal(viaAgent?.analysedBy, 'agent');
+});
+
+test('an index the agent invents is ignored, as it is for the model', () => {
+  const analysis = buildAgentVocAnalysis(indexed(['좋았습니다']), [
+    { index: 0, sentiment: 'positive', keyword: '만족' },
+    { index: 42, sentiment: 'negative', keyword: '없는응답' },
+  ]);
+
+  assert.equal(analysis?.groups.length, 1);
+  assert.equal(analysis?.classifiedCount, 1);
+});
+
+test('filler stays excluded no matter who classified it', () => {
+  const analysis = buildAgentVocAnalysis(indexed(['좋았습니다', '없음', '.']), [
+    { index: 0, sentiment: 'positive', keyword: '만족' },
+    // The agent tried to classify filler the app had already dropped.
+    { index: 1, sentiment: 'positive', keyword: '만족' },
+  ]);
+
+  assert.equal(analysis?.excludedCount, 2);
+  assert.equal(analysis?.classifiedCount, 1);
+});
+
+test('an agent that classifies nothing usable yields no section', () => {
+  // Better an absent section than an empty one implying the feedback had no themes.
+  assert.equal(buildAgentVocAnalysis(indexed(['좋았습니다']), []), null);
+  assert.equal(
+    buildAgentVocAnalysis(indexed(['좋았습니다']), [
+      { index: 0, sentiment: 'neutral', keyword: '보통' },
+    ]),
+    null,
+  );
 });

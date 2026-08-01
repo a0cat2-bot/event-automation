@@ -184,6 +184,20 @@ export const selectionGenerateBody = z.object({
 export const reportGenerateBody = z.object({
   format: z.enum(['markdown', 'html', 'pdf']),
   include_sections: z.array(z.enum(['summary', 'participants', 'survey_results', 'gifts'])).min(1),
+  // Survey feedback grouped by an agent working through MCP, when the in-app provider is
+  // unavailable. Indices come from GET /programs/:id/survey-responses, so they line up with the
+  // rows the report reads. Quotes are still assembled from the stored text — an agent supplies
+  // groupings, never words.
+  external_voc: z
+    .array(
+      z.object({
+        index: z.number().int().nonnegative(),
+        sentiment: z.enum(['positive', 'negative']),
+        keyword: z.string().trim().min(1).max(30),
+      }),
+    )
+    .max(2000)
+    .optional(),
 });
 
 export const giftItemCreateBody = z.object({

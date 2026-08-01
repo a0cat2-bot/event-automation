@@ -38,7 +38,14 @@ export interface VocAnalysis {
    */
   classifiedCount: number;
   excludedCount: number;
-  model: string;
+  /**
+   * Who classified. `ai` is this app's own provider with the prompt below; `agent` is a
+   * classification supplied from outside through MCP, which did not pass through it. The report
+   * states which, because a reader cannot otherwise tell how the grouping was arrived at.
+   */
+  analysedBy: 'ai' | 'agent';
+  /** Null on the agent path, where this app never saw a model. */
+  model: string | null;
   requestId: string | null;
 }
 
@@ -159,14 +166,9 @@ export async function analyseSurveyVoc(
       model ??= completion.model;
       requestId ??= completion.requestId;
 
-      for (const entry of parsed.classifications) {
-        // Ignore indices the model invented or that belong to another batch.
-        if (!textByIndex.has(entry.index)) continue;
-        const keyword = entry.keyword?.trim();
-        if (!keyword) continue;
-        if (entry.sentiment !== 'positive' && entry.sentiment !== 'negative') continue;
-        classifications.push({ index: entry.index, sentiment: entry.sentiment, keyword });
-        knownKeywords.add(keyword);
+      for (const entry of validClassifications(parsed.classifications, textByIndex)) {
+        classifications.push(entry);
+        knownKeywords.add(entry.keyword);
       }
     }
   } catch {
@@ -181,8 +183,60 @@ export async function analyseSurveyVoc(
     analysedCount: substantive.length,
     classifiedCount: new Set(classifications.map((entry) => entry.index)).size,
     excludedCount: responses.length - substantive.length,
+    analysedBy: 'ai',
     model,
     requestId,
+  };
+}
+
+/**
+ * Keeps only classifications that refer to a response actually sent and carry a usable sentiment
+ * and keyword. Shared by both paths so an agent's output is filtered exactly as the model's is.
+ */
+function validClassifications(
+  classifications: Array<{ index: number; sentiment: string; keyword: string }>,
+  textByIndex: Map<number, string>,
+): AiClassification[] {
+  const valid: AiClassification[] = [];
+  for (const entry of classifications) {
+    // Ignore indices the caller invented or that belong to another batch.
+    if (!textByIndex.has(entry.index)) continue;
+    const keyword = entry.keyword?.trim();
+    if (!keyword) continue;
+    if (entry.sentiment !== 'positive' && entry.sentiment !== 'negative') continue;
+    valid.push({ index: entry.index, sentiment: entry.sentiment, keyword });
+  }
+  return valid;
+}
+
+/**
+ * Assembles an analysis from classifications an agent produced through MCP, for deployments where
+ * the in-app provider is unavailable.
+ *
+ * Deliberately runs through the same `assembleGroups` as the AI path: quotes are read from the
+ * stored text by index, never from what the agent sent. The no-paraphrasing guarantee therefore
+ * holds identically here — an agent cannot put words into an employee's mouth either.
+ */
+export function buildAgentVocAnalysis(
+  responses: VocResponse[],
+  classifications: Array<{ index: number; sentiment: string; keyword: string }>,
+): VocAnalysis | null {
+  const substantive = responses.filter((response) => isSubstantive(response.text));
+  if (substantive.length === 0) return null;
+
+  const textByIndex = new Map(substantive.map((response) => [response.index, response.text]));
+  const valid = validClassifications(classifications, textByIndex);
+  if (valid.length === 0) return null;
+
+  return {
+    groups: assembleGroups(valid, textByIndex),
+    totalResponses: responses.length,
+    analysedCount: substantive.length,
+    classifiedCount: new Set(valid.map((entry) => entry.index)).size,
+    excludedCount: responses.length - substantive.length,
+    analysedBy: 'agent',
+    model: null,
+    requestId: null,
   };
 }
 

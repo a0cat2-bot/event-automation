@@ -7,8 +7,14 @@ import { Router, type NextFunction, type Request, type Response } from 'express'
 import { pool } from '../db/pool.js';
 import { validate } from '../middleware/validate.js';
 import { programParams, reportParams } from '../schemas/common.js';
+import { redactPersonalData } from '../utils/redaction.js';
 import { reportGenerateBody } from '../schemas/contracts.js';
-import { analyseSurveyVoc, type VocAnalysis } from '../services/llm/surveyVoc.js';
+import {
+  analyseSurveyVoc,
+  buildAgentVocAnalysis,
+  isSubstantive,
+  type VocAnalysis,
+} from '../services/llm/surveyVoc.js';
 import { getActorName } from '../utils/actor.js';
 import { getBrowser } from '../utils/browser.js';
 import { uploadsRoot } from '../utils/storage.js';
@@ -117,7 +123,14 @@ function vocSection(voc: VocAnalysis): string {
     }
   }
 
-  lines.push('', `_분석 모델: ${voc.model}${voc.requestId ? ` · 요청 ${voc.requestId}` : ''}_`);
+  // States how the grouping was arrived at, in the artefact people actually circulate. A reader
+  // cannot otherwise tell whether the app classified this or an operator's agent did.
+  lines.push(
+    '',
+    voc.analysedBy === 'agent'
+      ? '_분류: 외부 Agent (MCP) — 앱의 분류 프롬프트를 거치지 않았습니다. 인용문은 원문 그대로입니다._'
+      : `_분석 모델: ${voc.model}${voc.requestId ? ` · 요청 ${voc.requestId}` : ''}_`,
+  );
   return lines.join('\n');
 }
 
@@ -331,7 +344,63 @@ async function renderPdf(html: string): Promise<Buffer> {
   }
 }
 
+/**
+ * The one ordering that defines a response's index.
+ *
+ * Both the report and the survey-responses endpoint read through this, because an agent classifies
+ * by index: if the two orderings ever diverged, a quote would be filed under someone else's theme
+ * and nothing would look wrong.
+ */
+const COMPLETED_SURVEY_RESULTS_SQL = `SELECT a.name, latest_survey.satisfaction_score, latest_survey.feedback_text
+   FROM participants pt
+   JOIN applicants a ON a.id = pt.applicant_id AND a.program_id = pt.program_id
+   JOIN LATERAL (
+     SELECT sr.satisfaction_score, sr.feedback_text
+     FROM survey_results sr
+     WHERE sr.participant_id = pt.id
+       AND sr.program_id = pt.program_id
+     ORDER BY sr.completion_date DESC NULLS LAST,
+              sr.updated_at DESC,
+              sr.created_at DESC
+     LIMIT 1
+   ) latest_survey ON TRUE
+   WHERE pt.program_id = $1
+     AND pt.survey_status = 'completed'
+   ORDER BY pt.selection_rank ASC NULLS LAST, pt.id ASC`;
+
 export const reportsRouter = Router();
+
+/**
+ * The free-text survey responses, numbered, for an agent to classify through MCP when the in-app
+ * provider is unavailable. Returns what the report would analyse — nothing more.
+ *
+ * Names and scores are deliberately not included: grouping feedback by theme needs the text only,
+ * and an agent that cannot see who said what cannot group by who said it.
+ */
+reportsRouter.get(
+  '/programs/:program_id/survey-responses',
+  validate({ params: programParams }),
+  async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const programId = request.params.program_id as string;
+      const { rows } = await pool.query<SurveyResultReportRow>(COMPLETED_SURVEY_RESULTS_SQL, [
+        programId,
+      ]);
+
+      // Indices are assigned before filtering, so they still match the report's own numbering.
+      // Filtering with isSubstantive — the same test the AI path applies — means an agent is never
+      // asked to find a theme in "." or "없음".
+      const responses = rows
+        .map((row, index) => ({ index, text: row.feedback_text ?? '' }))
+        .filter((entry) => isSubstantive(entry.text))
+        .map((entry) => ({ index: entry.index, text: redactPersonalData(entry.text) }));
+
+      response.json({ responses });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 reportsRouter.post(
   '/programs/:program_id/reports/generate',
@@ -412,22 +481,7 @@ reportsRouter.post(
       const surveyResults = sections.surveyResults
         ? (
             await pool.query<SurveyResultReportRow>(
-              `SELECT a.name, latest_survey.satisfaction_score, latest_survey.feedback_text
-               FROM participants pt
-               JOIN applicants a ON a.id = pt.applicant_id AND a.program_id = pt.program_id
-               JOIN LATERAL (
-                 SELECT sr.satisfaction_score, sr.feedback_text
-                 FROM survey_results sr
-                 WHERE sr.participant_id = pt.id
-                   AND sr.program_id = pt.program_id
-                 ORDER BY sr.completion_date DESC NULLS LAST,
-                          sr.updated_at DESC,
-                          sr.created_at DESC
-                 LIMIT 1
-               ) latest_survey ON TRUE
-               WHERE pt.program_id = $1
-                 AND pt.survey_status = 'completed'
-               ORDER BY pt.selection_rank ASC NULLS LAST, pt.id ASC`,
+              COMPLETED_SURVEY_RESULTS_SQL,
               [programId],
             )
           ).rows
@@ -447,16 +501,21 @@ reportsRouter.post(
           ).rows
         : [];
 
+      // Indexed the same way the survey-responses endpoint indexes them, so classifications an
+      // agent computed from that endpoint line up with these rows.
+      const vocResponses = surveyResults
+        .map((result, index) => ({ index, text: result.feedback_text ?? '' }))
+        .filter((response) => response.text.trim() !== '');
+
       // Null when the AI feature is off or the call fails; the report then omits the section
-      // rather than presenting a different kind of analysis under the same heading.
-      const voc = sections.surveyResults
-        ? await analyseSurveyVoc(
-            surveyResults
-              .map((result, index) => ({ index, text: result.feedback_text ?? '' }))
-              .filter((response) => response.text.trim() !== ''),
-            { programName: program.name },
-          )
-        : null;
+      // rather than presenting a different kind of analysis under the same heading. An agent
+      // working through MCP can supply the grouping instead, for deployments with no provider.
+      const externalVoc = request.body.external_voc;
+      const voc = !sections.surveyResults
+        ? null
+        : externalVoc && externalVoc.length > 0
+          ? buildAgentVocAnalysis(vocResponses, externalVoc)
+          : await analyseSurveyVoc(vocResponses, { programName: program.name });
 
       const reportContent: ReportContent = {
         program,
