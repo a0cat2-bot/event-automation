@@ -158,6 +158,46 @@ function ApplicantFields({
   );
 }
 
+/**
+ * Builds the upload template for a program's selection mode.
+ *
+ * The columns are not the same for every program — a score-based intake needs `score` and a
+ * written-justification intake needs `justification` — so a single generic template would be
+ * wrong for two modes out of three. This generates the one that matches the program in hand.
+ *
+ * The leading BOM is what makes Excel read the file as UTF-8. Without it Korean opens as mojibake,
+ * and the natural fix — re-saving from Excel as EUC-KR — produces a file the upload cannot decode.
+ */
+function buildCsvTemplate(selectionMode: SelectionMode): string {
+  const columns = ['name', 'email', 'department'];
+  if (selectionMode === 'score') columns.push('score');
+  if (selectionMode === 'written_justification') columns.push('justification');
+  columns.push('applied_at');
+
+  const example: Record<string, string> = {
+    name: '홍길동',
+    email: 'gildong.hong@samsung.com',
+    department: 'AX센터 EHS그룹',
+    score: '85',
+    justification: '평소 안전관리에 관심이 많아 지원했습니다.',
+    applied_at: '2026-09-01T09:00:00',
+  };
+
+  const escape = (value: string) => (/[",\n]/.test(value) ? `"${value.replace(/"/g, '""')}"` : value);
+  const rows = [columns.join(','), columns.map((column) => escape(example[column] ?? '')).join(',')];
+  return `\ufeff${rows.join('\n')}\n`;
+}
+
+function downloadCsvTemplate(selectionMode: SelectionMode) {
+  const blob = new Blob([buildCsvTemplate(selectionMode)], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `신청자-업로드-양식-${selectionMode}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
 export function ApplicantUploadPage() {
   const { programId = '' } = useParams();
   const [program, setProgram] = useState<Program | null>(null);
@@ -324,11 +364,31 @@ export function ApplicantUploadPage() {
     >
       <ProgramContextBar programId={programId} />
       <div className="content-card">
-        <h2>CSV 파일 선택</h2>
-        <p className="field-hint">
-          필수 열: name, email, department. 선정 방식에 따라 score 또는
-          justification 열이 추가로 필요합니다.
-        </p>
+        <div className="section-heading">
+          <div>
+            <h2>CSV 파일 선택</h2>
+            {program ? (
+              <p className="field-hint">
+                필수 열: name, email, department
+                {program.selection_mode === 'score' ? ', score' : null}
+                {program.selection_mode === 'written_justification' ? ', justification' : null}.
+                applied_at은 선택이며, 비우면 파일 순서대로 접수됩니다.
+              </p>
+            ) : null}
+          </div>
+          {/* Placed with the format hint rather than near the upload button: it is what you need
+              before you have a file, not after. Waits for the program because the template's
+              columns depend on its selection mode. */}
+          {program ? (
+            <button
+              className="button button--secondary"
+              type="button"
+              onClick={() => downloadCsvTemplate(program.selection_mode)}
+            >
+              양식 내려받기
+            </button>
+          ) : null}
+        </div>
         <input type="file" accept=".csv,text/csv" onChange={handleFileChange} />
         <div className="standard-save-row" style={{ marginTop: '1rem' }}>
           <button
