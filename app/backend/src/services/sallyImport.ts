@@ -39,7 +39,20 @@ export class SallyImportParseError extends Error {
   }
 }
 
-const healthQuestionCodePattern = /^(?:[4-9]|1[0-3])(?:-\d+)?$/;
+/**
+ * A Sally answer column is headed by a question number, optionally with a sub-question suffix
+ * ("11-1"). Everything else in the header row — Open time, Submit time, Email, Note, Device info,
+ * the UTM columns — is metadata and carries no answer.
+ */
+const questionCodePattern = /^\d+(?:-\d+)?$/;
+
+/**
+ * Marks a question as asking whether the person intends to take part, so a declining answer can be
+ * acted on. Deliberately narrow: it wants both the subject (참석/참여) and a forward-looking form,
+ * because "이전에 참여한 적 있습니까?" answered No must not be read as a decline.
+ */
+const attendanceQuestionPattern = /(?:참석|참여)\s*(?:여부|하시겠|하시나요|하실|하시겠습니까)/;
+const decliningAnswers = new Set(['no', '아니오', '아니요', '불참', '미참석', '참석하지 않음']);
 const basicEmailPattern =
   /^[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+(?:\.[a-zA-Z0-9!#$%&'*+/=?^_`{|}~-]+)*@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$/;
 const maximumRecommendedRows = 5_000;
@@ -141,17 +154,37 @@ function findRequiredColumn(headers: unknown[], name: string) {
   return index;
 }
 
-function healthQuestionColumns(headers: unknown[], questions: unknown[]) {
+/**
+ * Every answer column except the identity question.
+ *
+ * Question numbers are not hardcoded: a survey's numbering is its own, and pinning specific ones
+ * here would mean a code change for each new survey — and silently empty answers for any survey
+ * that numbers its questions differently.
+ */
+function answerColumns(headers: unknown[], questions: unknown[], identityIndex: number) {
   const usedKeys = new Set<string>();
   return headers.flatMap((header, index) => {
+    if (index === identityIndex) return [];
     const code = textValue(header);
-    if (!healthQuestionCodePattern.test(code)) return [];
+    if (!questionCodePattern.test(code)) return [];
 
     const questionText = textValue(questions[index]) || `Question ${code}`;
     const key = usedKeys.has(questionText) ? `${questionText} [${code}]` : questionText;
     usedKeys.add(key);
-    return [{ index, key }];
+    return [{ index, key, questionText }];
   });
+}
+
+/** True when this row answered an attendance question saying they will not take part. */
+function declinedAttendance(
+  columns: Array<{ index: number; questionText: string }>,
+  row: unknown[],
+): boolean {
+  return columns.some(
+    (column) =>
+      attendanceQuestionPattern.test(column.questionText) &&
+      decliningAnswers.has(textValue(row[column.index]).toLowerCase()),
+  );
 }
 
 /** Parses row 4 onward from the first sheet of a Sally results export on disk. */
@@ -193,15 +226,27 @@ export function parseSallyExport(data: Buffer): SallyStagedApplicantRecord[] {
 
   const submitTimeIndex = findRequiredColumn(headers, 'Submit time');
   const identityIndex = findRequiredColumn(headers, '1');
-  const healthColumns = healthQuestionColumns(headers, questions);
+  const columns = answerColumns(headers, questions, identityIndex);
 
   return rows.slice(3).flatMap<SallyStagedApplicantRecord>((row) => {
     if (!row || row.every((value) => textValue(value) === '')) return [];
 
     const identity = parseSallyIdentity(row[identityIndex]);
-    const healthAnswers = Object.fromEntries(
-      healthColumns.map(({ index, key }) => [key, answerValue(row[index])]),
+    const answers = Object.fromEntries(
+      columns.map(({ index, key }) => [key, answerValue(row[index])]),
     );
+    const issues = [...identity.issues];
+
+    // Someone who said they will not attend is kept in the staged list rather than dropped, so the
+    // coordinator can see the decision was made and by whom. Flagged as an error because that is
+    // what the confirm step already excludes from the import.
+    if (declinedAttendance(columns, row)) {
+      issues.push({
+        type: 'error',
+        code: 'declined_attendance',
+        message: '참석하지 않겠다고 응답해 신청자에서 제외했습니다.',
+      });
+    }
 
     return [
       {
@@ -209,9 +254,9 @@ export function parseSallyExport(data: Buffer): SallyStagedApplicantRecord[] {
         name: identity.name,
         applied_at: appliedAtValue(row[submitTimeIndex]),
         department: null,
-        justification: JSON.stringify(healthAnswers),
+        justification: JSON.stringify(answers),
         score: null,
-        issues: identity.issues,
+        issues,
       },
     ];
   });
