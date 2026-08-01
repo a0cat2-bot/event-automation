@@ -283,7 +283,11 @@ export async function stageSallyImport(options: {
     const rowNumber = index + 4;
     const knoxId = record.knox_id?.trim() ?? '';
     const email = knoxIdToEmail(knoxId);
-    const name = record.name?.trim() ?? '';
+    // Question 1 asks for "Knox ID / 성명" and a predictable share of people answer with the ID
+    // alone. They are real signups and their address is derivable, so the ID stands in as a
+    // placeholder name rather than the row being dropped. Flagged below so it gets corrected.
+    const submittedName = record.name?.trim() ?? '';
+    const name = submittedName || knoxId;
     const rawAppliedAt =
       record.applied_at instanceof Date
         ? record.applied_at.toISOString()
@@ -319,6 +323,17 @@ export async function stageSallyImport(options: {
       );
     }
     if (!name) addIssue(row, 'error', 'required', 'name is required', 'name');
+    else if (!submittedName) {
+      // A warning, not an error: the row imports, but the coordinator should replace the ID with a
+      // real name before letters go out, or the greeting reads as an account rather than a person.
+      addIssue(
+        row,
+        'warning',
+        'name_defaulted_to_knox_id',
+        '이름을 적지 않아 Knox ID를 임시 이름으로 넣었습니다. 레터 발송 전에 실제 이름으로 수정하세요.',
+        'name',
+      );
+    }
     if (email.length > 255) {
       addIssue(row, 'error', 'too_long', 'email must be at most 255 characters', 'email');
     } else if (email && !basicEmailPattern.test(email)) {

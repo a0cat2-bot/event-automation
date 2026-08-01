@@ -1,13 +1,27 @@
 import assert from 'node:assert/strict';
-import test from 'node:test';
+import test, { before } from 'node:test';
 
-import { resolveIdentityProvider, type AuthConfig } from './index.js';
 import {
   canAccessBusinessUnit,
   roleAtLeast,
   type AuthenticatedUser,
   type UserRole,
 } from './types.js';
+
+/**
+ * KNOX_EMAIL_DOMAIN is cleared before the module graph loads. config/env.ts pulls in dotenv, so
+ * the bare-Knox-ID case below once passed only because the developer's .env left it blank, and
+ * broke as soon as a real domain was configured. dotenv leaves a key already in process.env
+ * alone, so setting it empty here wins; node:test isolates this to one process.
+ */
+
+let resolveIdentityProvider: typeof import('./index.js').resolveIdentityProvider;
+type AuthConfig = import('./index.js').AuthConfig;
+
+before(async () => {
+  process.env.KNOX_EMAIL_DOMAIN = '';
+  ({ resolveIdentityProvider } = await import('./index.js'));
+});
 
 function config(authProvider: string): AuthConfig {
   return { authProvider };
