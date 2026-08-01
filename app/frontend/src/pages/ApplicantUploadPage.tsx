@@ -21,6 +21,7 @@ import {
   type PreviewResponse,
 } from '../api/applicants';
 import { getProgram, type Program, type SelectionMode } from '../api/programs';
+import { uploadSallyExport } from '../api/sally';
 import { PageShell } from '../components/PageShell';
 import { ProgramContextBar } from '../components/ProgramContextBar';
 import { formatDateTime } from '../utils/format';
@@ -209,6 +210,8 @@ export function ApplicantUploadPage() {
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewResponse | null>(null);
+  const [sallyFile, setSallyFile] = useState<File | null>(null);
+  const [isUploadingSally, setIsUploadingSally] = useState(false);
   const [conflictResolution, setConflictResolution] = useState<
     'skip_duplicates' | 'overwrite'
   >('skip_duplicates');
@@ -282,6 +285,27 @@ export function ApplicantUploadPage() {
       setUploadError(error instanceof Error ? error.message : 'CSV 업로드에 실패했습니다.');
     } finally {
       setIsUploading(false);
+    }
+  }
+
+  async function handleSallyUpload() {
+    if (!sallyFile) return;
+    setIsUploadingSally(true);
+    setUploadError(null);
+    setPreview(null);
+    setConfirmResult(null);
+
+    try {
+      const { upload_id: uploadId } = await uploadSallyExport(programId, sallyFile);
+      // Same preview and confirm step as the CSV path — the staged rows are identical in shape.
+      const nextPreview = await previewApplicantUpload(programId, uploadId);
+      setPreview(nextPreview);
+    } catch (error) {
+      setUploadError(
+        error instanceof Error ? error.message : 'Sally 엑셀 업로드에 실패했습니다.',
+      );
+    } finally {
+      setIsUploadingSally(false);
     }
   }
 
@@ -405,6 +429,34 @@ export function ApplicantUploadPage() {
             {uploadError}
           </p>
         ) : null}
+      </div>
+
+      {/* Second intake route on the same page, because a Sally import produces applicants too.
+          The preview and confirm steps below are shared — only how the rows arrive differs. */}
+      <div className="content-card">
+        <h2>Sally 엑셀 업로드</h2>
+        <p className="field-hint">
+          Sally에서 내려받은 결과 엑셀을 그대로 올리세요. 열을 고치거나 CSV로 바꿀 필요가 없습니다.
+          Knox ID와 성명은 1번 문항에서, 접수 시각은 Submit time 열에서 읽습니다.
+        </p>
+        <input
+          type="file"
+          accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+          onChange={(event) => {
+            setSallyFile(event.target.files?.[0] ?? null);
+            setUploadError(null);
+          }}
+        />
+        <div className="standard-save-row" style={{ marginTop: '1rem' }}>
+          <button
+            className="button button--primary"
+            type="button"
+            onClick={handleSallyUpload}
+            disabled={!sallyFile || isUploadingSally || isUploading}
+          >
+            {isUploadingSally ? '업로드 중…' : 'Sally 엑셀 업로드'}
+          </button>
+        </div>
       </div>
 
       {confirmResult ? (

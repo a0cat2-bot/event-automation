@@ -154,11 +154,22 @@ function healthQuestionColumns(headers: unknown[], questions: unknown[]) {
   });
 }
 
-/** Parses row 4 onward from the first sheet of a Sally results export. */
+/** Parses row 4 onward from the first sheet of a Sally results export on disk. */
 export function parseSallyImport(filePath: string): SallyStagedApplicantRecord[] {
+  return parseSallyExport(readFileSync(filePath));
+}
+
+/**
+ * Same parse, from bytes rather than a path.
+ *
+ * The browser automation writes the export to disk before parsing it; a coordinator uploading the
+ * file they already downloaded from Sally has only a buffer. Both go through here so the two
+ * routes cannot drift into accepting different things.
+ */
+export function parseSallyExport(data: Buffer): SallyStagedApplicantRecord[] {
   let workbook: XLSX.WorkBook;
   try {
-    workbook = XLSX.read(readFileSync(filePath), { cellDates: true });
+    workbook = XLSX.read(data, { cellDates: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     throw new SallyImportParseError(`Could not read Sally Excel export: ${message}`);

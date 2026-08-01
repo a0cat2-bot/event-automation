@@ -23,3 +23,23 @@ export function syncSallySurvey(
     body: JSON.stringify({ survey_title: surveyTitle }),
   });
 }
+
+/**
+ * Stages applicants from a Sally export the coordinator already downloaded.
+ *
+ * Unlike `syncSallySurvey`, this needs no Sally credentials, no network reach to Sally, and does
+ * not depend on Sally's screens being unchanged — the file is already in hand. Both end at the
+ * same parser, so the staged result is the same.
+ */
+export function uploadSallyExport(
+  programId: string,
+  file: File,
+): Promise<SallyImportResponse> {
+  const body = new FormData();
+  body.append('file', file);
+
+  return apiRequest<SallyImportResponse>(
+    `/programs/${encodeURIComponent(programId)}/sally/import/upload`,
+    { method: 'POST', body },
+  );
+}

@@ -1,4 +1,5 @@
 import { Router, type NextFunction, type Request, type Response } from 'express';
+import multer from 'multer';
 
 import { pool } from '../db/pool.js';
 import { validate } from '../middleware/validate.js';
@@ -17,6 +18,7 @@ import {
   SallySurveyNotFoundError,
 } from '../services/sally.js';
 import {
+  parseSallyExport,
   parseSallyImport,
   SallyImportParseError,
   stageSallyImport,
@@ -105,6 +107,82 @@ sallyRouter.post(
             getActorName(request),
             programId,
             JSON.stringify({ survey_title: surveyTitle, row_count: upload.rows.length }),
+            request.ip || null,
+          ],
+        );
+      } catch (error) {
+        removeStagedUpload(programId, upload.uploadId);
+        throw error;
+      }
+
+      response.status(201).json({
+        upload_id: upload.uploadId,
+        row_count: upload.rows.length,
+        validation_summary: validationSummary(upload),
+      });
+    } catch (error) {
+      if (!handleSallyError(response, error)) next(error);
+    }
+  },
+);
+
+/** Sally exports are .xlsx; the same 10 MB ceiling the CSV upload uses. */
+const sallyFileUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 1 },
+});
+
+/**
+ * Stages applicants from a Sally export the coordinator already has.
+ *
+ * The sibling route drives a browser to fetch the same file, which needs Sally credentials,
+ * network reach, and Sally's own screens to be unchanged. None of that is available when someone
+ * simply has the export sitting in their downloads folder, which is how this work usually starts.
+ * Both routes end at the same parser and the same staging, so what gets imported is identical.
+ */
+sallyRouter.post(
+  '/programs/:program_id/sally/import/upload',
+  validate({ params: programParams }),
+  sallyFileUpload.single('file'),
+  async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const programId = request.params.program_id as string;
+      const program = await accessibleProgram(programId);
+      if (!program) {
+        response.status(404).json({ error: 'Program not found' });
+        return;
+      }
+      if (!program.selection_mode || !selectionModes.includes(program.selection_mode)) {
+        response.status(400).json({ error: 'Program selection_mode is not configured' });
+        return;
+      }
+
+      const file = request.file;
+      if (!file) {
+        response.status(400).json({ error: 'Sally 엑셀 파일을 선택하세요.' });
+        return;
+      }
+
+      const records = parseSallyExport(file.buffer);
+      const upload = await stageSallyImport({
+        programId,
+        selectionMode: program.selection_mode,
+        records,
+      });
+
+      try {
+        await pool.query(
+          `INSERT INTO audit_logs
+             (actor_name, action, entity_type, entity_id, program_id, details, ip_address)
+           VALUES ($1, 'sally_import', 'program', $2, $2, $3::jsonb, $4)`,
+          [
+            getActorName(request),
+            programId,
+            JSON.stringify({
+              source: 'manual_upload',
+              filename: file.originalname,
+              row_count: upload.rows.length,
+            }),
             request.ip || null,
           ],
         );

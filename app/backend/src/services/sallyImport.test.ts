@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
-import { rmSync, writeFileSync } from 'node:fs';
+import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 
 import * as XLSX from 'xlsx';
 
-import { parseSallyIdentity, parseSallyImport } from './sallyImport.js';
+import { parseSallyExport, parseSallyIdentity, parseSallyImport } from './sallyImport.js';
 
 function writeWorkbook(rows: unknown[][], filePath: string) {
   const workbook = XLSX.utils.book_new();
@@ -101,3 +101,25 @@ test('parseSallyImport rejects exports without exact required headers', () => {
   }
 });
 
+
+test('the same export parses identically from a path and from bytes', () => {
+  // The browser automation writes to disk; a coordinator uploading their own download has only a
+  // buffer. If the two ever diverged, an import would depend on how the file arrived.
+  const filePath = join(tmpdir(), `sally-import-${randomUUID()}.xlsx`);
+  const rows = [
+    ['Submit time', 'Email', 1, 4, '11-1'],
+    ['', '', '프로님 Knox ID / 성명 을 적어주세요.', '현재 통증', '목 통증 빈도'],
+    ['', '', 'SHORT', 'NPS', 'MATRIX'],
+    ['2026-07-20T09:30:00+09:00', '', 'gildong.hong / 홍길동', 7, '자주'],
+  ];
+  writeWorkbook(rows, filePath);
+
+  try {
+    const fromPath = parseSallyImport(filePath);
+    const fromBytes = parseSallyExport(readFileSync(filePath));
+    assert.deepEqual(fromBytes, fromPath);
+    assert.equal(fromBytes[0]?.name, '홍길동');
+  } finally {
+    rmSync(filePath, { force: true });
+  }
+});
