@@ -11,7 +11,9 @@ The npm-workspace monorepo contains a React 18 frontend, an Express/TypeScript b
 - Notification email through a swappable provider layer (Gmail today; an internal portal can be added later).
 - Optional satisfaction-survey synchronization through browser automation for [Sally](https://sally.coach/).
 
-The EHS/KEMA content included in seed data and example letter templates is only a worked example. Adopters are expected to replace the organization name in the in-app **Organization Settings** page and configure their own letter categories and templates.
+The historical design material uses EHS/KEMA as a worked example. Fresh installs start with a
+generic organization and no programs or applicants; adopters configure their own organization,
+letter templates, and program data in the app.
 
 [`DESIGN.md`](./DESIGN.md) is retained as a historical record of the original EHS-focused build. It includes decisions that no longer describe current behavior, including the removed authentication and RBAC design.
 
@@ -19,7 +21,6 @@ The EHS/KEMA content included in seed data and example letter templates is only 
 
 - Node.js 20 or newer and npm 10 or newer (`node --version` / `npm --version`)
 - Docker Engine with Docker Compose v2
-- `psql` is optional; the commands below run it inside the PostgreSQL container
 
 On a fresh WSL2/Ubuntu installation, make Docker Desktop available through WSL integration and install the browser dependencies and binary used by letter generation and Sally automation:
 
@@ -41,28 +42,35 @@ cp frontend/.env.example frontend/.env
 
 The example environment files use the Docker PostgreSQL defaults and local development ports. `SALLY_EMAIL` and `SALLY_PASSWORD` are needed only for Sally automation. Gmail notification delivery requires the Gmail variables documented in `backend/.env.example`. Never commit real credentials or local `.env` files.
 
-## Start PostgreSQL and apply migrations
+## Start everything with Docker
 
 ```bash
-docker compose up -d postgres
-docker compose ps
+docker compose up --build
 ```
 
-After the health check passes, apply the migrations in order:
+This starts PostgreSQL, applies every pending migration in filename order, installs the minimal
+seed data, and serves the web app and API together. Open <http://localhost:3000>. Migration
+checksums are recorded in `schema_migrations`; startup stops instead of guessing if an applied SQL
+file changes.
+
+PostgreSQL is exposed on host port 5432 by default. If another local container or service already
+uses that port, keep the container's internal configuration unchanged and choose another host port:
 
 ```bash
-docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U app -d app_db < backend/db/migrations/001_initial_schema.sql
-docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U app -d app_db < backend/db/migrations/002_letter_editor_fields.sql
-docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U app -d app_db < backend/db/migrations/003_letter_categories.sql
-docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U app -d app_db < backend/db/migrations/004_remove_auth.sql
-docker compose exec -T postgres psql -v ON_ERROR_STOP=1 -U app -d app_db < backend/db/migrations/005_genericize_org_default.sql
+POSTGRES_PORT=5433 docker compose up --build
 ```
 
 Stop services without deleting the database volume with `docker compose down`.
 
-## Run the app
+## Run locally for development
+
+Start only PostgreSQL (use `POSTGRES_PORT=5433` here too if port 5432 is occupied), then run the
+same migration and seed entry points used by the app container:
 
 ```bash
+docker compose up -d postgres
+npm run migrate
+npm run seed
 npm run dev
 ```
 
@@ -72,13 +80,17 @@ npm run dev
 
 Run either side independently with `npm run dev:backend` or `npm run dev:frontend`.
 
+The seed is idempotent and intentionally contains no programs or applicants. It creates only one
+`Default` business unit, the seven built-in letter categories, and the fallback organization
+settings row. Rename the business unit and organization from the app before using it with a team.
+
 ## Verification
 
 ```bash
 npm run typecheck
 npm run lint
 npm run build
-cd backend && npm test
+npm test
 ```
 
 ## Project layout
@@ -86,10 +98,12 @@ cd backend && npm test
 ```text
 app/
 ├── backend/
-│   ├── db/migrations/    # PostgreSQL schema migrations
+│   ├── db/migrations/    # Ordered PostgreSQL schema migrations
+│   ├── db/seed/          # Idempotent minimum startup data
 │   └── src/              # API, selection, letters, email, and Sally automation
 ├── frontend/
 │   └── src/              # React UI, API clients, components, and pages
+├── Dockerfile
 ├── docker-compose.yml
 ├── DESIGN.md             # Historical EHS-focused design record
 └── package.json          # Workspace scripts

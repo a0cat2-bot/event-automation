@@ -1,18 +1,18 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
-import {
-  backendMultipartRequest,
-  backendRequest,
-  toolRequest,
-} from '../apiClient.js';
+import { backendMultipartRequest, backendRequest, toolRequest } from '../apiClient.js';
 
 const uploadIdentity = {
   program_id: z.string().uuid().describe('Program UUID.'),
   upload_id: z.string().uuid().describe('Staged upload UUID.'),
 };
 
-export function registerApplicantTools(server: McpServer, backendApiUrl: string): void {
+export function registerApplicantTools(
+  server: McpServer,
+  backendApiUrl: string,
+  request: typeof backendRequest = backendRequest,
+): void {
   server.registerTool(
     'event_automation_upload_applicants',
     {
@@ -113,7 +113,7 @@ export function registerApplicantTools(server: McpServer, backendApiUrl: string)
     },
     ({ program_id }) =>
       toolRequest('List applicants', () =>
-        backendRequest(
+        request(
           backendApiUrl,
           `/programs/${encodeURIComponent(program_id)}/applicants?redact_free_text=true`,
         ),

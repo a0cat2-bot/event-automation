@@ -8,14 +8,35 @@ services:
       POSTGRES_USER: app
       POSTGRES_PASSWORD: app
     ports:
-      - "5432:5432"
+      - '${POSTGRES_PORT:-5432}:5432'
     volumes:
       - event-automation-postgres-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app -d app_db"]
+      test: ['CMD-SHELL', 'pg_isready -U app -d app_db']
       interval: 5s
       timeout: 5s
       retries: 10
 
+  app:
+    build:
+      context: .
+      args:
+        VITE_API_BASE_URL: /api/v1
+    restart: unless-stopped
+    env_file:
+      - backend/.env
+    environment:
+      DATABASE_URL: postgresql://app:app@postgres:5432/app_db
+      FRONTEND_ORIGIN: http://localhost:${APP_PORT:-3000}
+      PORT: 3000
+    ports:
+      - '${APP_PORT:-3000}:3000'
+    volumes:
+      - event-automation-uploads:/app/backend/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+
 volumes:
   event-automation-postgres-data:
+  event-automation-uploads:

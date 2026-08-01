@@ -3,7 +3,11 @@ import { z } from 'zod';
 
 import { backendRequest, toolRequest } from '../apiClient.js';
 
-export function registerReportTools(server: McpServer, backendApiUrl: string): void {
+export function registerReportTools(
+  server: McpServer,
+  backendApiUrl: string,
+  request: typeof backendRequest = backendRequest,
+): void {
   server.registerTool(
     'event_automation_list_survey_responses',
     {
@@ -19,10 +23,7 @@ export function registerReportTools(server: McpServer, backendApiUrl: string): v
     },
     ({ program_id }) =>
       toolRequest('List survey responses', () =>
-        backendRequest(
-          backendApiUrl,
-          `/programs/${encodeURIComponent(program_id)}/survey-responses`,
-        ),
+        request(backendApiUrl, `/programs/${encodeURIComponent(program_id)}/survey-responses`),
       ),
   );
 

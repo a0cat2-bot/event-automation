@@ -1,3 +1,7 @@
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
 import cors from 'cors';
 import express, { type ErrorRequestHandler } from 'express';
 import multer from 'multer';
@@ -8,6 +12,7 @@ import { apiRouter } from './routes/index.js';
 import { uploadsRoot } from './utils/storage.js';
 
 export const app = express();
+const frontendDist = fileURLToPath(new URL('../../frontend/dist/', import.meta.url));
 
 if (env.authProvider === 'disabled') {
   console.warn(
@@ -31,6 +36,17 @@ app.get('/health', (_request, response) => {
 });
 
 app.use('/api/v1', authenticate, apiRouter);
+
+if (existsSync(frontendDist)) {
+  app.use(express.static(frontendDist));
+  app.get('*', (request, response, next) => {
+    if (request.path.startsWith('/api/') || request.path.startsWith('/uploads/')) {
+      next();
+      return;
+    }
+    response.sendFile(join(frontendDist, 'index.html'));
+  });
+}
 
 app.use((_request, response) => {
   response.status(404).json({ error: 'Route not found' });
