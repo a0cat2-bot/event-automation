@@ -9,6 +9,7 @@ export const env = {
   sallyAutomationAdminEmail: process.env.SALLY_AUTOMATION_ADMIN_EMAIL || undefined,
   // Sally collects a bare Knox ID; this turns it into the address letters are sent to.
   knoxEmailDomain: process.env.KNOX_EMAIL_DOMAIN || undefined,
+  recruitmentRecipientSource: process.env.RECRUITMENT_RECIPIENT_SOURCE || 'manual',
   emailProvider: process.env.EMAIL_PROVIDER || 'gmail',
   gmailUser: process.env.GMAIL_USER || undefined,
   gmailAppPassword: process.env.GMAIL_APP_PASSWORD || undefined,

@@ -86,7 +86,11 @@ export function SallySurveyDraftCard({
       const result = await createSallySurvey(programId, kind);
       setDraft(result.draft);
       if (result.created) {
-        setActionMessage('Sally에 설문을 생성했습니다.');
+        setActionMessage(
+          result.survey_url
+            ? `Sally에 설문을 생성하고 링크를 저장했습니다: ${result.survey_url}`
+            : 'Sally에 설문을 생성했습니다.',
+        );
       } else {
         setActionError(
           `Sally 자동 생성을 사용할 수 없습니다. 아래 초안을 복사해 직접 생성해주세요. ${result.reason ?? ''}`.trim(),

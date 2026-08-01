@@ -14,6 +14,7 @@ export type Program = {
   business_unit_id: string;
   business_unit: string;
   intake_data: Record<string, unknown> | null;
+  recruitment_survey_url: string | null;
   template_version_id: string | null;
   selection_mode: SelectionMode;
   max_participants: number;

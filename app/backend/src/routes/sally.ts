@@ -142,6 +142,30 @@ sallyRouter.post(
 );
 
 sallyRouter.get(
+  '/programs/:program_id/sally/surveys/recruitment',
+  validate({ params: programParams }),
+  async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const result = await pool.query<{ recruitment_survey_url: string | null }>(
+        `SELECT recruitment_survey_url
+         FROM programs
+         WHERE id = $1 AND deleted_at IS NULL
+         LIMIT 1`,
+        [request.params.program_id],
+      );
+      const program = result.rows[0];
+      if (!program) {
+        response.status(404).json({ error: 'Program not found' });
+        return;
+      }
+      response.json({ survey_url: program.recruitment_survey_url });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+sallyRouter.get(
   '/programs/:program_id/sally/surveys/description-image',
   validate({ params: sallySurveyDescriptionImageParams }),
   async (request: Request, response: Response, next: NextFunction) => {
@@ -219,7 +243,35 @@ sallyRouter.post(
       const { kind } = sallySurveyBody.parse(request.body);
       const draft = generateSallySurveyDraft(program, kind);
       try {
-        await createSallySurvey(draft);
+        const surveyUrl = await createSallySurvey(draft);
+        if (kind === 'recruitment') {
+          await pool.query(
+            `UPDATE programs
+             SET recruitment_survey_url = $2, updated_at = NOW()
+             WHERE id = $1`,
+            [programId, surveyUrl],
+          );
+        }
+
+        await pool.query(
+          `INSERT INTO audit_logs
+             (actor_name, action, entity_type, entity_id, program_id, details, ip_address)
+           VALUES ($1, 'sally_survey_created', 'program', $2, $2, $3::jsonb, $4)`,
+          [
+            getActorName(request),
+            programId,
+            JSON.stringify({ kind, survey_title: draft.title, survey_url: surveyUrl }),
+            request.ip || null,
+          ],
+        );
+
+        response.status(201).json({
+          draft,
+          created: true,
+          automation_available: true,
+          survey_url: surveyUrl,
+        });
+        return;
       } catch (error) {
         if (!(error instanceof SallyUiMismatchError)) throw error;
         await notifySallyUiMismatch(error.step);
@@ -232,23 +284,6 @@ sallyRouter.post(
         return;
       }
 
-      await pool.query(
-        `INSERT INTO audit_logs
-           (actor_name, action, entity_type, entity_id, program_id, details, ip_address)
-         VALUES ($1, 'sally_survey_created', 'program', $2, $2, $3::jsonb, $4)`,
-        [
-          getActorName(request),
-          programId,
-          JSON.stringify({ kind, survey_title: draft.title }),
-          request.ip || null,
-        ],
-      );
-
-      response.status(201).json({
-        draft,
-        created: true,
-        automation_available: true,
-      });
     } catch (error) {
       if (!handleSallyError(response, error)) next(error);
     }

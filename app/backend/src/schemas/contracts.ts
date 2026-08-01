@@ -51,6 +51,18 @@ export const sallySurveyDescriptionImageParams = z.object({
   program_id: z.string().uuid(),
 });
 
+export const recruitmentRecipientsBody = z.object({
+  emails: z.array(z.string().trim().min(1).max(255).email()).max(5_000),
+});
+
+export const recruitmentNoticeBody = z.object({
+  template_id: z.string().uuid(),
+});
+
+export const recruitmentNoticeSendBody = recruitmentNoticeBody.extend({
+  confirmed: z.literal(true),
+});
+
 export const letterGenerateBody = z.object({
   template_id: z.string().uuid(),
   program_id: z.string().uuid(),

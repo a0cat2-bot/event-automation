@@ -5,6 +5,56 @@ import { backendRequest, toolRequest } from '../apiClient.js';
 
 export function registerSallyTools(server: McpServer, backendApiUrl: string): void {
   server.registerTool(
+    'event_automation_create_sally_survey',
+    {
+      description:
+        'Creates the requested Sally survey through server-side browser automation. On success returns the generated draft and survey_url captured from the address bar after publication; recruitment survey URLs are also stored on the program. A Sally UI mismatch returns the draft with created=false so a human can recover manually.',
+      inputSchema: z.object({
+        program_id: z.string().uuid().describe('Program UUID.'),
+        kind: z.enum(['recruitment', 'satisfaction']).describe('Survey purpose.'),
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+    },
+    ({ program_id, kind }) =>
+      toolRequest('Create Sally survey', () =>
+        backendRequest(
+          backendApiUrl,
+          `/programs/${encodeURIComponent(program_id)}/sally/surveys/create`,
+          { method: 'POST', body: { kind } },
+        ),
+      ),
+  );
+
+  server.registerTool(
+    'event_automation_get_recruitment_survey_url',
+    {
+      description:
+        'Reads the Sally recruitment survey URL currently stored on a program. Returns { survey_url }, which is null until automated recruitment-survey creation succeeds.',
+      inputSchema: z.object({
+        program_id: z.string().uuid().describe('Program UUID.'),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    ({ program_id }) =>
+      toolRequest('Read recruitment survey URL', () =>
+        backendRequest(
+          backendApiUrl,
+          `/programs/${encodeURIComponent(program_id)}/sally/surveys/recruitment`,
+        ),
+      ),
+  );
+
+  server.registerTool(
     'event_automation_sync_sally_results',
     {
       description:

@@ -3,7 +3,15 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 
 import { listApplicants, type Applicant } from '../api/applicants';
-import { generateLetter } from '../api/letters';
+import {
+  generateLetter,
+  getRecruitmentNoticeSetup,
+  previewRecruitmentNotice,
+  saveRecruitmentRecipients,
+  sendRecruitmentNotice,
+  type RecruitmentNoticeOutcome,
+  type RecruitmentNoticePreview,
+} from '../api/letters';
 import { getLetterTemplates, type LetterTemplate } from '../api/letterTemplates';
 import { getProgram, type Program } from '../api/programs';
 import { PageShell } from '../components/PageShell';
@@ -31,6 +39,14 @@ export function LetterDraftsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, PreviewState>>({});
+  const [recipientText, setRecipientText] = useState('');
+  const [recipientsSaved, setRecipientsSaved] = useState(false);
+  const [selectedRecruitmentTemplateId, setSelectedRecruitmentTemplateId] = useState('');
+  const [noticePreview, setNoticePreview] = useState<RecruitmentNoticePreview | null>(null);
+  const [noticeOutcomes, setNoticeOutcomes] = useState<RecruitmentNoticeOutcome[]>([]);
+  const [noticeError, setNoticeError] = useState<string | null>(null);
+  const [noticeMessage, setNoticeMessage] = useState<string | null>(null);
+  const [noticeAction, setNoticeAction] = useState<'save' | 'preview' | 'send' | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -45,6 +61,12 @@ export function LetterDraftsPage() {
       }),
       listApplicants(programId, controller.signal).then(({ applicants: next }) => {
         if (isCurrent) setApplicants(next);
+      }),
+      getRecruitmentNoticeSetup(programId, controller.signal).then(({ recipients }) => {
+        if (isCurrent) {
+          setRecipientText(recipients.join('\n'));
+          setRecipientsSaved(true);
+        }
       }),
     ])
       .catch((error: unknown) => {
@@ -63,6 +85,82 @@ export function LetterDraftsPage() {
   }, [programId]);
 
   const previewApplicant = applicants[0] ?? null;
+
+  const recruitmentTemplates = templates.filter(
+    (template) => template.template_type === 'recruitment' && template.layout_mode === 'standard',
+  );
+
+  useEffect(() => {
+    if (!selectedRecruitmentTemplateId && recruitmentTemplates[0]) {
+      setSelectedRecruitmentTemplateId(String(recruitmentTemplates[0].id));
+    }
+  }, [recruitmentTemplates, selectedRecruitmentTemplateId]);
+
+  function recipientEmails() {
+    return recipientText
+      .split(/[\n,;]+/)
+      .map((email) => email.trim())
+      .filter(Boolean);
+  }
+
+  function resetNoticeReview() {
+    setNoticePreview(null);
+    setNoticeOutcomes([]);
+    setNoticeMessage(null);
+  }
+
+  async function handleSaveRecipients() {
+    setNoticeAction('save');
+    setNoticeError(null);
+    resetNoticeReview();
+    try {
+      const result = await saveRecruitmentRecipients(programId, recipientEmails());
+      setRecipientText(result.recipients.join('\n'));
+      setRecipientsSaved(true);
+      setNoticeMessage(`${result.recipients.length}명의 수신자를 저장했습니다.`);
+    } catch (error) {
+      setRecipientsSaved(false);
+      setNoticeError(error instanceof Error ? error.message : '수신자를 저장하지 못했습니다.');
+    } finally {
+      setNoticeAction(null);
+    }
+  }
+
+  async function handleNoticePreview() {
+    if (!selectedRecruitmentTemplateId || !recipientsSaved) return;
+    setNoticeAction('preview');
+    setNoticeError(null);
+    setNoticeMessage(null);
+    setNoticeOutcomes([]);
+    try {
+      setNoticePreview(
+        await previewRecruitmentNotice(programId, selectedRecruitmentTemplateId),
+      );
+    } catch (error) {
+      setNoticePreview(null);
+      setNoticeError(error instanceof Error ? error.message : '발송 미리보기를 만들지 못했습니다.');
+    } finally {
+      setNoticeAction(null);
+    }
+  }
+
+  async function handleNoticeSend() {
+    if (!noticePreview || !selectedRecruitmentTemplateId) return;
+    if (!window.confirm(`${noticePreview.recipients.length}명에게 모집 안내를 발송할까요?`)) return;
+    setNoticeAction('send');
+    setNoticeError(null);
+    setNoticeMessage(null);
+    try {
+      const result = await sendRecruitmentNotice(programId, selectedRecruitmentTemplateId);
+      setNoticeOutcomes(result.outcomes);
+      setNoticeMessage('발송을 마쳤습니다. 아래에서 수신자별 결과를 확인하세요.');
+      setNoticePreview(null);
+    } catch (error) {
+      setNoticeError(error instanceof Error ? error.message : '모집 안내를 발송하지 못했습니다.');
+    } finally {
+      setNoticeAction(null);
+    }
+  }
 
   async function handlePreview(template: LetterTemplate) {
     if (!previewApplicant) return;
@@ -127,6 +225,168 @@ export function LetterDraftsPage() {
         <p className="state-message state-message--error" role="alert">
           {loadError}
         </p>
+      ) : null}
+
+      {!isLoading ? (
+        <section className="content-card" aria-label="모집 안내 발송">
+          <div className="section-heading">
+            <div>
+              <h2>모집 안내 발송</h2>
+              <p>
+                수신자와 레터를 저장한 뒤 미리보기를 확인해야 실제 발송 버튼이 열립니다.
+              </p>
+            </div>
+          </div>
+          <div className="standard-editor-form">
+            <label>
+              모집 레터
+              <select
+                value={selectedRecruitmentTemplateId}
+                onChange={(event) => {
+                  setSelectedRecruitmentTemplateId(event.target.value);
+                  resetNoticeReview();
+                }}
+              >
+                {recruitmentTemplates.length === 0 ? (
+                  <option value="">사용 가능한 표준 모집 레터가 없습니다.</option>
+                ) : null}
+                {recruitmentTemplates.map((template) => (
+                  <option key={template.id} value={String(template.id)}>
+                    {template.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label>
+              수신자 이메일
+              <textarea
+                rows={7}
+                value={recipientText}
+                onChange={(event) => {
+                  setRecipientText(event.target.value);
+                  setRecipientsSaved(false);
+                  resetNoticeReview();
+                }}
+                placeholder={'employee1@example.com\nemployee2@example.com'}
+              />
+              <span className="field-hint">
+                한 줄에 하나씩 입력하세요. 쉼표와 세미콜론도 구분자로 사용할 수 있으며, 대소문자만
+                다른 중복 주소는 하나로 저장됩니다.
+              </span>
+            </label>
+            <p className="field-hint">
+              Sally 설문 링크:{' '}
+              {program?.recruitment_survey_url ? (
+                <a href={program.recruitment_survey_url} target="_blank" rel="noreferrer">
+                  {program.recruitment_survey_url}
+                </a>
+              ) : (
+                '아직 저장되지 않았습니다. 먼저 모집 설문을 생성하세요.'
+              )}
+            </p>
+            <div className="standard-save-row">
+              <button
+                className="button button--secondary"
+                type="button"
+                onClick={handleSaveRecipients}
+                disabled={noticeAction !== null}
+              >
+                {noticeAction === 'save' ? '저장 중…' : '수신자 저장'}
+              </button>
+              <button
+                className="button button--primary"
+                type="button"
+                onClick={handleNoticePreview}
+                disabled={
+                  !recipientsSaved ||
+                  !selectedRecruitmentTemplateId ||
+                  !program?.recruitment_survey_url ||
+                  noticeAction !== null
+                }
+              >
+                {noticeAction === 'preview' ? '미리보는 중…' : '발송 미리보기'}
+              </button>
+            </div>
+            {noticeMessage ? <p className="save-success">{noticeMessage}</p> : null}
+            {noticeError ? (
+              <p className="form-error" role="alert">
+                {noticeError}
+              </p>
+            ) : null}
+          </div>
+
+          {noticePreview ? (
+            <div className="content-card">
+              <h3>발송 전 확인</h3>
+              <p>
+                <strong>제목:</strong> {noticePreview.subject}
+              </p>
+              <p>
+                <strong>CTA:</strong>{' '}
+                <a href={noticePreview.survey_url} target="_blank" rel="noreferrer">
+                  {noticePreview.cta_text} · {noticePreview.survey_url}
+                </a>
+              </p>
+              <p>
+                <strong>수신자 {noticePreview.recipients.length}명:</strong>{' '}
+                {noticePreview.recipients.join(', ')}
+              </p>
+              <iframe
+                title="모집 안내 발송 미리보기"
+                srcDoc={noticePreview.letter_html}
+                style={{
+                  width: '100%',
+                  height: '560px',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--radius-sm)',
+                }}
+              />
+              <div className="standard-save-row">
+                <button
+                  className="button button--primary"
+                  type="button"
+                  onClick={handleNoticeSend}
+                  disabled={noticeAction !== null}
+                >
+                  {noticeAction === 'send' ? '발송 중…' : '확인한 내용으로 실제 발송'}
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {noticeOutcomes.length > 0 ? (
+            <div className="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>수신자</th>
+                    <th>결과</th>
+                    <th>상세</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {noticeOutcomes.map((outcome) => (
+                    <tr key={outcome.email}>
+                      <td>{outcome.email}</td>
+                      <td>
+                        <span
+                          className={`status-badge ${
+                            outcome.status === 'sent'
+                              ? 'status-badge--success'
+                              : 'status-badge--warning'
+                          }`}
+                        >
+                          {outcome.status === 'sent' ? '성공' : '실패'}
+                        </span>
+                      </td>
+                      <td>{outcome.message_id ?? outcome.error ?? '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </section>
       ) : null}
 
       {!isLoading && applicants.length === 0 ? (

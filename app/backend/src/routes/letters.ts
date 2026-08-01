@@ -6,15 +6,29 @@ import { extname, join } from 'node:path';
 import { Router, type NextFunction, type Request, type Response } from 'express';
 
 import { pool } from '../db/pool.js';
+import { env } from '../config/env.js';
 import { validate } from '../middleware/validate.js';
-import { letterParams } from '../schemas/common.js';
+import { letterParams, programParams } from '../schemas/common.js';
 import {
   letterGenerateBody,
   letterPlaceholderKey,
   letterStandardContentBody,
   letterTextFields,
+  recruitmentNoticeBody,
+  recruitmentNoticeSendBody,
+  recruitmentRecipientsBody,
   type LetterPlaceholderKey,
 } from '../schemas/contracts.js';
+import { getEmailProvider } from '../services/email/index.js';
+import {
+  getRecruitmentRecipientProvider,
+  RecruitmentRecipientSourceUnavailableError,
+} from '../services/recruitmentRecipients/index.js';
+import {
+  runRecruitmentNotice,
+  type RecruitmentNoticeMessage,
+  type RecruitmentNoticeOutcome,
+} from '../services/recruitmentNotice.js';
 import { getActorName } from '../utils/actor.js';
 import { getBrowser } from '../utils/browser.js';
 import { uploadUrlToFilePath, uploadsRoot } from '../utils/storage.js';
@@ -33,6 +47,7 @@ interface GenerationContextRow {
   program_id: string;
   program_name: string;
   program_business_unit: string;
+  recruitment_survey_url: string | null;
   intake_data: unknown;
 }
 
@@ -139,8 +154,7 @@ function buildPlaceholderValues(
     program_date: programDateValue(context.intake_data),
     program_location: intakeValue(context.intake_data, 'program_location', 'location'),
     program_time: intakeValue(context.intake_data, 'program_time', 'time'),
-    // TODO(§7/§10): Resolve these after Sally and gift selection are implemented.
-    survey_link: null,
+    survey_link: context.recruitment_survey_url,
     gift_amount: null,
     coordinator_name: coordinatorName,
     coordinator_contact: coordinatorContact,
@@ -224,7 +238,7 @@ interface GiftItemForRender {
   imageDataUrl: string | null;
 }
 
-function renderStandardHtml(params: {
+export function renderStandardHtml(params: {
   content: ReturnType<typeof letterStandardContentBody.parse>;
   category: TemplateModeRow;
   programName: string;
@@ -690,6 +704,7 @@ export async function generateLettersForApplicants(params: {
             p.id AS program_id,
             p.name AS program_name,
             bu.name AS program_business_unit,
+            p.recruitment_survey_url,
             p.intake_data
      FROM letter_templates t
      CROSS JOIN programs p
@@ -935,6 +950,323 @@ export async function generateLettersForApplicants(params: {
 }
 
 export const lettersRouter = Router();
+
+interface RecruitmentNoticeContextRow extends GenerationContextRow, TemplateModeRow {
+  template_type: 'recruitment' | 'notification' | 'gift_notification' | null;
+}
+
+async function prepareRecruitmentNoticeMessage(
+  programId: string,
+  templateId: string,
+): Promise<RecruitmentNoticeMessage> {
+  const contextResult = await pool.query<RecruitmentNoticeContextRow>(
+    `SELECT t.id AS template_id,
+            t.template_type,
+            t.brand_variant AS template_brand_variant,
+            COALESCE(t.output_format, 'pdf') AS output_format,
+            COALESCE(plc.background_image_url, t.background_image_url) AS background_image_url,
+            COALESCE(plc.canvas_width, t.canvas_width) AS canvas_width,
+            COALESCE(plc.canvas_height, t.canvas_height) AS canvas_height,
+            COALESCE(plc.text_fields, t.text_fields) AS text_fields,
+            t.layout_mode,
+            t.category_id,
+            COALESCE(plc.standard_content, t.standard_content) AS standard_content,
+            c.slug AS category_slug,
+            c.has_datetime,
+            c.has_location,
+            c.has_gift_info,
+            c.has_precautions,
+            c.has_cta_link,
+            c.default_title_text,
+            p.id AS program_id,
+            p.name AS program_name,
+            bu.name AS program_business_unit,
+            p.recruitment_survey_url,
+            p.intake_data
+     FROM letter_templates t
+     CROSS JOIN programs p
+     JOIN business_units bu ON bu.id = p.business_unit_id
+     LEFT JOIN letter_categories c ON c.id = t.category_id
+     LEFT JOIN program_letter_customizations plc
+       ON plc.template_id = t.id AND plc.program_id = p.id
+     WHERE t.id = $1
+       AND t.is_active = TRUE
+       AND p.id = $2
+       AND p.deleted_at IS NULL
+     LIMIT 1`,
+    [templateId, programId],
+  );
+  const context = contextResult.rows[0];
+  if (!context) {
+    throw new LetterGenerationRequestError(404, { error: 'Template or program not found' });
+  }
+  if (context.template_type !== 'recruitment') {
+    throw new LetterGenerationRequestError(400, {
+      error: 'A recruitment letter template is required',
+    });
+  }
+  if (
+    context.layout_mode !== 'standard' ||
+    !context.category_id ||
+    !context.default_title_text ||
+    !context.has_cta_link
+  ) {
+    throw new LetterGenerationRequestError(400, {
+      error: 'The recruitment template must use a standard category with a CTA link',
+    });
+  }
+  if (!context.recruitment_survey_url) {
+    throw new LetterGenerationRequestError(409, {
+      error: 'Create the Sally recruitment survey before preparing its notice',
+    });
+  }
+
+  const contentResult = letterStandardContentBody.safeParse(context.standard_content);
+  if (!contentResult.success) {
+    throw new LetterGenerationRequestError(400, {
+      error: 'Template standard_content is missing or invalid',
+      issues: contentResult.error.issues,
+    });
+  }
+  const programDate = programDateValue(context.intake_data);
+  const programTime = intakeValue(context.intake_data, 'program_time', 'time');
+  const programLocation = intakeValue(context.intake_data, 'program_location', 'location');
+  const content = {
+    ...contentResult.data,
+    datetime_text:
+      [programDate, programTime].filter(Boolean).join(' ') || contentResult.data.datetime_text,
+    location_text: programLocation ?? contentResult.data.location_text,
+    cta_text: contentResult.data.cta_text || '신청하기',
+    cta_link: context.recruitment_survey_url,
+  };
+
+  const orgSettingsResult = await pool.query<OrgSettingsRow>(
+    `SELECT business_unit, character_image_url, org_display_name, default_coordinator_name,
+            default_coordinator_contact, updated_at
+     FROM org_settings
+     WHERE business_unit IN ($1, '')
+     ORDER BY CASE WHEN business_unit = $1 THEN 0 ELSE 1 END
+     LIMIT 1`,
+    [context.program_business_unit],
+  );
+  const orgSettings = orgSettingsResult.rows[0];
+  if (!orgSettings) {
+    throw new LetterGenerationRequestError(500, {
+      error: 'Organization settings are unavailable',
+    });
+  }
+
+  let characterDataUrl: string | null = null;
+  if (orgSettings.character_image_url) {
+    const characterPath = uploadUrlToFilePath(orgSettings.character_image_url);
+    if (characterPath) {
+      try {
+        const characterBytes = await readFile(characterPath);
+        characterDataUrl = `data:${mimeTypeForImagePath(characterPath)};base64,${characterBytes.toString('base64')}`;
+      } catch {
+        // Keep the character slot empty when the configured file is unavailable.
+      }
+    }
+  }
+
+  const giftItemRows = await pool.query<{
+    name: string;
+    description: string | null;
+    image_url: string | null;
+  }>(
+    `SELECT name, description, image_url
+     FROM gift_items
+     WHERE program_id = $1
+     ORDER BY created_at ASC`,
+    [programId],
+  );
+  const giftItems: GiftItemForRender[] = [];
+  for (const item of giftItemRows.rows) {
+    let imageDataUrl: string | null = null;
+    if (item.image_url) {
+      const imagePath = uploadUrlToFilePath(item.image_url);
+      if (imagePath) {
+        try {
+          const imageBytes = await readFile(imagePath);
+          imageDataUrl = `data:${mimeTypeForImagePath(imagePath)};base64,${imageBytes.toString('base64')}`;
+        } catch {
+          // Render the item without an image when its configured file is unavailable.
+        }
+      }
+    }
+    giftItems.push({ name: item.name, description: item.description, imageDataUrl });
+  }
+
+  const variables = buildPlaceholderValues(
+    context,
+    { id: '', name: null, email: null, department: null },
+    orgSettings.default_coordinator_name,
+    orgSettings.default_coordinator_contact,
+  );
+  return {
+    programName: context.program_name,
+    subject: `[${context.program_name}] 참여자 모집 안내`,
+    letterHtml: renderStandardHtml({
+      content,
+      category: context,
+      programName: context.program_name,
+      orgDisplayName: orgSettings.org_display_name,
+      characterDataUrl,
+      giftItems,
+      variables,
+    }),
+    outputFormat: context.output_format,
+    surveyUrl: context.recruitment_survey_url,
+    ctaText: content.cta_text,
+  };
+}
+
+async function recruitmentProgram(programId: string) {
+  const result = await pool.query<{ id: string; recruitment_survey_url: string | null }>(
+    `SELECT id, recruitment_survey_url
+     FROM programs
+     WHERE id = $1 AND deleted_at IS NULL
+     LIMIT 1`,
+    [programId],
+  );
+  return result.rows[0];
+}
+
+function handleRecruitmentRecipientError(response: Response, error: unknown): boolean {
+  if (error instanceof RecruitmentRecipientSourceUnavailableError) {
+    response.status(503).json({ error: error.message });
+    return true;
+  }
+  return false;
+}
+
+lettersRouter.get(
+  '/programs/:program_id/recruitment-notice',
+  validate({ params: programParams }),
+  async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const programId = request.params.program_id as string;
+      const program = await recruitmentProgram(programId);
+      if (!program) {
+        response.status(404).json({ error: 'Program not found' });
+        return;
+      }
+      const recipients = await getRecruitmentRecipientProvider().listRecipients(programId);
+      response.json({
+        source: env.recruitmentRecipientSource,
+        survey_url: program.recruitment_survey_url,
+        recipients,
+      });
+    } catch (error) {
+      if (!handleRecruitmentRecipientError(response, error)) next(error);
+    }
+  },
+);
+
+lettersRouter.put(
+  '/programs/:program_id/recruitment-notice/recipients',
+  validate({ params: programParams, body: recruitmentRecipientsBody }),
+  async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const programId = request.params.program_id as string;
+      if (!(await recruitmentProgram(programId))) {
+        response.status(404).json({ error: 'Program not found' });
+        return;
+      }
+      const { emails } = recruitmentRecipientsBody.parse(request.body);
+      const recipients = await getRecruitmentRecipientProvider().replaceRecipients(
+        programId,
+        emails,
+      );
+      response.json({ source: env.recruitmentRecipientSource, recipients });
+    } catch (error) {
+      if (!handleRecruitmentRecipientError(response, error)) next(error);
+    }
+  },
+);
+
+lettersRouter.post(
+  '/programs/:program_id/recruitment-notice/preview',
+  validate({ params: programParams, body: recruitmentNoticeBody }),
+  async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const programId = request.params.program_id as string;
+      const { template_id: templateId } = recruitmentNoticeBody.parse(request.body);
+      const recipients = await getRecruitmentRecipientProvider().listRecipients(programId);
+      if (recipients.length === 0) {
+        response.status(422).json({ error: 'Enter at least one recruitment recipient' });
+        return;
+      }
+      const message = await prepareRecruitmentNoticeMessage(programId, templateId);
+      response.json(await runRecruitmentNotice({ dryRun: true, recipients, message }));
+    } catch (error) {
+      if (error instanceof LetterGenerationRequestError) {
+        response.status(error.status).json(error.body);
+        return;
+      }
+      if (!handleRecruitmentRecipientError(response, error)) next(error);
+    }
+  },
+);
+
+lettersRouter.post(
+  '/programs/:program_id/recruitment-notice/send',
+  validate({ params: programParams, body: recruitmentNoticeSendBody }),
+  async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const programId = request.params.program_id as string;
+      const { template_id: templateId } = recruitmentNoticeSendBody.parse(request.body);
+      const recipients = await getRecruitmentRecipientProvider().listRecipients(programId);
+      if (recipients.length === 0) {
+        response.status(422).json({ error: 'Enter at least one recruitment recipient' });
+        return;
+      }
+      const prepared = await prepareRecruitmentNoticeMessage(programId, templateId);
+      const message: RecruitmentNoticeMessage = {
+        ...prepared,
+        attachment: await renderLetter(
+          prepared.letterHtml,
+          standardCanvasWidth,
+          standardCanvasHeight,
+          prepared.outputFormat,
+        ),
+      };
+      const result = await runRecruitmentNotice({
+        dryRun: false,
+        recipients,
+        message,
+        emailProvider: getEmailProvider(),
+        recordSend: async (outcomes: RecruitmentNoticeOutcome[]) => {
+          await pool.query(
+            `INSERT INTO audit_logs
+               (actor_name, action, entity_type, entity_id, program_id, details, ip_address)
+             VALUES ($1, 'recruitment_notice_sent', 'program', $2, $2, $3::jsonb, $4)`,
+            [
+              getActorName(request),
+              programId,
+              JSON.stringify({
+                template_id: templateId,
+                survey_url: prepared.surveyUrl,
+                email_provider: env.emailProvider,
+                sent_count: outcomes.filter((outcome) => outcome.status === 'sent').length,
+                failed_count: outcomes.filter((outcome) => outcome.status === 'failed').length,
+                outcomes,
+              }),
+              request.ip || null,
+            ],
+          );
+        },
+      });
+      response.json(result);
+    } catch (error) {
+      if (error instanceof LetterGenerationRequestError) {
+        response.status(error.status).json(error.body);
+        return;
+      }
+      if (!handleRecruitmentRecipientError(response, error)) next(error);
+    }
+  },
+);
 
 lettersRouter.post(
   '/letters/generate',

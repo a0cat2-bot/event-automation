@@ -5,6 +5,85 @@ import { backendRequest, toolRequest } from '../apiClient.js';
 
 export function registerLetterTools(server: McpServer, backendApiUrl: string): void {
   server.registerTool(
+    'event_automation_prepare_recruitment_notice',
+    {
+      description:
+        'Validates, case-insensitively de-duplicates, and saves the manually supplied recruitment recipient list for a program. This is the preparation step before preview; pass an empty list to clear it. Knox Portal contacts are not available yet, so deployments using that source return a clear instruction to use the manual source.',
+      inputSchema: z.object({
+        program_id: z.string().uuid().describe('Program UUID.'),
+        emails: z.array(z.string().email()).max(5_000).describe('Employee email addresses.'),
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    ({ program_id, emails }) =>
+      toolRequest('Prepare recruitment notice recipients', () =>
+        backendRequest(
+          backendApiUrl,
+          `/programs/${encodeURIComponent(program_id)}/recruitment-notice/recipients`,
+          { method: 'PUT', body: { emails } },
+        ),
+      ),
+  );
+
+  server.registerTool(
+    'event_automation_preview_recruitment_notice',
+    {
+      description:
+        'Dry-runs a recruitment notice without writing or sending anything. Returns exactly which saved recipients would receive it, the subject and email body, the fully rendered letter HTML, and the Sally CTA URL/text. Use this preview before any confirmed send.',
+      inputSchema: z.object({
+        program_id: z.string().uuid().describe('Program UUID.'),
+        template_id: z.string().uuid().describe('Recruitment letter-template UUID.'),
+      }),
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    ({ program_id, template_id }) =>
+      toolRequest('Preview recruitment notice', () =>
+        backendRequest(
+          backendApiUrl,
+          `/programs/${encodeURIComponent(program_id)}/recruitment-notice/preview`,
+          { method: 'POST', body: { template_id } },
+        ),
+      ),
+  );
+
+  server.registerTool(
+    'event_automation_send_recruitment_notice',
+    {
+      description:
+        'Irreversibly sends the recruitment letter to real employee addresses. A human is expected to have reviewed event_automation_preview_recruitment_notice first; call this only with confirmed=true after that review. Returns a sent/failed outcome for every recipient, and one failure does not stop the others.',
+      inputSchema: z.object({
+        program_id: z.string().uuid().describe('Program UUID.'),
+        template_id: z.string().uuid().describe('Recruitment letter-template UUID.'),
+        confirmed: z.literal(true).describe('Explicit confirmation after human preview review.'),
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: false,
+        idempotentHint: false,
+        openWorldHint: true,
+      },
+    },
+    ({ program_id, template_id, confirmed }) =>
+      toolRequest('Send recruitment notice', () =>
+        backendRequest(
+          backendApiUrl,
+          `/programs/${encodeURIComponent(program_id)}/recruitment-notice/send`,
+          { method: 'POST', body: { template_id, confirmed } },
+        ),
+      ),
+  );
+
+  server.registerTool(
     'event_automation_list_letter_templates',
     {
       description:

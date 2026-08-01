@@ -22,6 +22,7 @@ export type SallySurveyCreationResponse = {
   draft: SallySurveyDraft;
   created: boolean;
   automation_available: boolean;
+  survey_url?: string;
   reason?: string;
 };
 

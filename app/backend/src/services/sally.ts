@@ -287,10 +287,10 @@ async function discardPartialSurvey(page: Page) {
 /**
  * Creates a survey through Sally's browser UI.
  *
- * These selectors could not be verified against Sally from this environment. Keep the four guarded
+ * These selectors could not be verified against Sally from this environment. Keep the guarded
  * steps below in UI order so a production mismatch identifies the smallest place to update.
  */
-export async function createSallySurvey(draft: SallySurveyDraft): Promise<void> {
+export async function createSallySurvey(draft: SallySurveyDraft): Promise<string> {
   let browser: Browser | undefined;
   let context: BrowserContext | undefined;
   let page: Page | undefined;
@@ -330,7 +330,23 @@ export async function createSallySurvey(draft: SallySurveyDraft): Promise<void> 
       await page?.getByRole('button', { name: '설문 게시', exact: true }).click({
         timeout: creationActionTimeoutMs,
       });
+      await page?.waitForTimeout(750);
       await saveStorageState(context as BrowserContext);
+    });
+
+    return await creationStep('capture survey URL', async () => {
+      const currentUrl = page?.url();
+      if (!currentUrl) throw new Error('the published survey page has no address');
+      const parsed = new URL(currentUrl);
+      if (
+        parsed.protocol !== 'https:' ||
+        !/(?:^|\.)sally\.coach$/i.test(parsed.hostname) ||
+        parsed.href === sallyHomeUrl ||
+        parsed.pathname === '/home'
+      ) {
+        throw new Error(`the post-publish address is not a Sally survey URL: ${currentUrl}`);
+      }
+      return parsed.href;
     });
   } catch (error) {
     if (error instanceof SallyUiMismatchError) {
