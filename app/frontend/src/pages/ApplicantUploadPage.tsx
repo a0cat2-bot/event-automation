@@ -24,6 +24,7 @@ import { getProgram, type Program, type SelectionMode } from '../api/programs';
 import { uploadSallyExport } from '../api/sally';
 import { PageShell } from '../components/PageShell';
 import { ProgramContextBar } from '../components/ProgramContextBar';
+import { SallySurveyDraftCard } from '../components/SallySurveyDraftCard';
 import { formatDateTime } from '../utils/format';
 
 const STATUS_LABELS: Record<PreviewResponse['rows'][number]['status'], string> = {
@@ -387,6 +388,7 @@ export function ApplicantUploadPage() {
       showStubNote={false}
     >
       <ProgramContextBar programId={programId} />
+      <SallySurveyDraftCard programId={programId} kind="recruitment" />
       <div className="content-card">
         <div className="section-heading">
           <div>

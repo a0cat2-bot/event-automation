@@ -1,6 +1,6 @@
 import { API_BASE_URL } from '../config/api';
 
-export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+async function request(path: string, init?: RequestInit): Promise<Response> {
   const headers = new Headers(init?.headers);
   const actorName = localStorage.getItem('actorName');
   if (actorName?.trim()) {
@@ -17,10 +17,22 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
     if (devUserEmail) headers.set('X-Dev-User-Email', devUserEmail);
   }
 
-  const response = await fetch(`${API_BASE_URL.replace(/\/$/, '')}${path}`, {
+  return fetch(`${API_BASE_URL.replace(/\/$/, '')}${path}`, {
     ...init,
     headers,
   });
+}
+
+async function errorMessage(response: Response): Promise<string> {
+  const payload = (await response.json().catch(() => null)) as {
+    error?: string;
+    message?: string;
+  } | null;
+  return payload?.message ?? payload?.error ?? '요청을 처리하지 못했습니다.';
+}
+
+export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await request(path, init);
   const payload = (await response.json().catch(() => null)) as
     (T & { error?: string; message?: string }) | null;
 
@@ -33,4 +45,10 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
   }
 
   return payload;
+}
+
+export async function apiBlobRequest(path: string, init?: RequestInit): Promise<Blob> {
+  const response = await request(path, init);
+  if (!response.ok) throw new Error(await errorMessage(response));
+  return response.blob();
 }

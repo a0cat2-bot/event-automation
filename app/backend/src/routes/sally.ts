@@ -1,33 +1,61 @@
+import { readFile } from 'node:fs/promises';
+
 import { Router, type NextFunction, type Request, type Response } from 'express';
 import multer from 'multer';
 
 import { pool } from '../db/pool.js';
+import { env } from '../config/env.js';
 import { validate } from '../middleware/validate.js';
 import { programParams } from '../schemas/common.js';
-import { sallyImportApplicantsBody } from '../schemas/contracts.js';
+import {
+  sallyImportApplicantsBody,
+  sallySurveyBody,
+  sallySurveyDescriptionImageParams,
+} from '../schemas/contracts.js';
 import {
   removeStagedUpload,
   validationSummary,
   type SelectionMode,
 } from '../services/applicantStaging.js';
 import {
+  createSallySurvey,
   downloadSurveyResults,
   SallyConfigurationError,
+  SallyCreationError,
   SallyDownloadError,
   SallyLoginError,
   SallySurveyNotFoundError,
+  SallyUiMismatchError,
 } from '../services/sally.js';
+import { getEmailProvider } from '../services/email/index.js';
 import {
   parseSallyExport,
   parseSallyImport,
   SallyImportParseError,
   stageSallyImport,
 } from '../services/sallyImport.js';
+import {
+  buildSallySurveyDescriptionHtml,
+  sallyDescriptionImageHeight,
+  sallyDescriptionImageWidth,
+} from '../services/sallySurveyDescriptionImage.js';
+import { generateSallySurveyDraft } from '../services/sallySurveyDraft.js';
 import { getActorName } from '../utils/actor.js';
+import { mimeTypeForImagePath, renderLetter } from './letters.js';
+import { uploadUrlToFilePath } from '../utils/storage.js';
 
 interface ProgramRow {
   id: string;
+  name: string;
+  business_unit: string;
+  max_participants: number;
+  intake_data: unknown;
   selection_mode: SelectionMode | null;
+}
+
+interface SallyOrgSettingsRow {
+  character_image_url: string | null;
+  org_display_name: string;
 }
 
 const selectionModes: SelectionMode[] = [
@@ -38,9 +66,11 @@ const selectionModes: SelectionMode[] = [
 
 async function accessibleProgram(programId: string) {
   const result = await pool.query<ProgramRow>(
-    `SELECT id, selection_mode
-     FROM programs
-     WHERE id = $1 AND deleted_at IS NULL
+    `SELECT p.id, p.name, bu.name AS business_unit, p.max_participants, p.intake_data,
+            p.selection_mode
+     FROM programs p
+     JOIN business_units bu ON bu.id = p.business_unit_id
+     WHERE p.id = $1 AND p.deleted_at IS NULL
      LIMIT 1`,
     [programId],
   );
@@ -64,6 +94,10 @@ function handleSallyError(response: Response, error: unknown) {
     response.status(502).json({ error: 'Sally download failed', details: error.message });
     return true;
   }
+  if (error instanceof SallyCreationError) {
+    response.status(502).json({ error: 'Sally survey creation failed', details: error.message });
+    return true;
+  }
   if (error instanceof SallyImportParseError) {
     response.status(500).json({ error: 'Sally export parsing failed', details: error.message });
     return true;
@@ -72,6 +106,154 @@ function handleSallyError(response: Response, error: unknown) {
 }
 
 export const sallyRouter = Router();
+
+async function notifySallyUiMismatch(step: string) {
+  if (!env.sallyAutomationAdminEmail) return;
+
+  try {
+    await getEmailProvider().sendEmail({
+      to: env.sallyAutomationAdminEmail,
+      subject: '[Sally] 설문 자동 생성 UI 변경 감지',
+      html: `<p>Sally UI가 변경되어 설문 자동 생성을 중단했습니다.</p><p>중단 단계: ${step}</p>`,
+      text: `Sally UI가 변경되어 설문 자동 생성을 중단했습니다.\n중단 단계: ${step}`,
+    });
+  } catch {
+    // The coordinator still needs the draft even when the optional notification channel is down.
+  }
+}
+
+sallyRouter.post(
+  '/programs/:program_id/sally/surveys/draft',
+  validate({ params: programParams, body: sallySurveyBody }),
+  async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const program = await accessibleProgram(request.params.program_id as string);
+      if (!program) {
+        response.status(404).json({ error: 'Program not found' });
+        return;
+      }
+
+      const { kind } = sallySurveyBody.parse(request.body);
+      response.json({ draft: generateSallySurveyDraft(program, kind) });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+sallyRouter.get(
+  '/programs/:program_id/sally/surveys/description-image',
+  validate({ params: sallySurveyDescriptionImageParams }),
+  async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const { program_id: programId } = sallySurveyDescriptionImageParams.parse(request.params);
+      const program = await accessibleProgram(programId);
+      if (!program) {
+        response.status(404).json({ error: 'Program not found' });
+        return;
+      }
+
+      const settingsResult = await pool.query<SallyOrgSettingsRow>(
+        `SELECT character_image_url, org_display_name
+         FROM org_settings
+         WHERE business_unit IN ($1, '')
+         ORDER BY CASE WHEN business_unit = $1 THEN 0 ELSE 1 END
+         LIMIT 1`,
+        [program.business_unit],
+      );
+      const settings = settingsResult.rows[0];
+      if (!settings) {
+        response.status(500).json({ error: 'Organization settings are unavailable' });
+        return;
+      }
+
+      let characterDataUrl: string | null = null;
+      if (settings.character_image_url) {
+        const characterPath = uploadUrlToFilePath(settings.character_image_url);
+        if (characterPath) {
+          try {
+            const characterBytes = await readFile(characterPath);
+            characterDataUrl = `data:${mimeTypeForImagePath(characterPath)};base64,${characterBytes.toString('base64')}`;
+          } catch {
+            // Leave the reserved character space empty when the configured file is unavailable.
+          }
+        }
+      }
+
+      const html = buildSallySurveyDescriptionHtml({
+        program,
+        orgDisplayName: settings.org_display_name,
+        characterDataUrl,
+      });
+      const image = await renderLetter(
+        html,
+        sallyDescriptionImageWidth,
+        sallyDescriptionImageHeight,
+        'image',
+      );
+      response.type('png');
+      response.setHeader('Content-Length', String(image.byteLength));
+      response.setHeader(
+        'Content-Disposition',
+        `inline; filename="DESCRIPTION_${programId}.png"`,
+      );
+      response.send(image);
+    } catch (error) {
+      next(error);
+    }
+  },
+);
+
+sallyRouter.post(
+  '/programs/:program_id/sally/surveys/create',
+  validate({ params: programParams, body: sallySurveyBody }),
+  async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const programId = request.params.program_id as string;
+      const program = await accessibleProgram(programId);
+      if (!program) {
+        response.status(404).json({ error: 'Program not found' });
+        return;
+      }
+
+      const { kind } = sallySurveyBody.parse(request.body);
+      const draft = generateSallySurveyDraft(program, kind);
+      try {
+        await createSallySurvey(draft);
+      } catch (error) {
+        if (!(error instanceof SallyUiMismatchError)) throw error;
+        await notifySallyUiMismatch(error.step);
+        response.json({
+          draft,
+          created: false,
+          automation_available: false,
+          reason: error.message,
+        });
+        return;
+      }
+
+      await pool.query(
+        `INSERT INTO audit_logs
+           (actor_name, action, entity_type, entity_id, program_id, details, ip_address)
+         VALUES ($1, 'sally_survey_created', 'program', $2, $2, $3::jsonb, $4)`,
+        [
+          getActorName(request),
+          programId,
+          JSON.stringify({ kind, survey_title: draft.title }),
+          request.ip || null,
+        ],
+      );
+
+      response.status(201).json({
+        draft,
+        created: true,
+        automation_available: true,
+      });
+    } catch (error) {
+      if (!handleSallyError(response, error)) next(error);
+    }
+  },
+);
 
 sallyRouter.post(
   '/programs/:program_id/sally/import',

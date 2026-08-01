@@ -43,6 +43,14 @@ export const sallyImportApplicantsBody = z.object({
   survey_title: z.string().trim().min(1).max(255),
 });
 
+export const sallySurveyBody = z.object({
+  kind: z.enum(['recruitment', 'satisfaction']),
+});
+
+export const sallySurveyDescriptionImageParams = z.object({
+  program_id: z.string().uuid(),
+});
+
 export const letterGenerateBody = z.object({
   template_id: z.string().uuid(),
   program_id: z.string().uuid(),

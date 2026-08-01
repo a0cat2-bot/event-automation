@@ -1,10 +1,63 @@
-import { apiRequest } from './client';
+import { apiBlobRequest, apiRequest } from './client';
 
 export type SallyImportResponse = {
   upload_id: string;
   row_count: number;
   validation_summary: { errors: number; warnings: number; duplicates_count: number };
 };
+
+export type SallySurveyKind = 'recruitment' | 'satisfaction';
+
+export type SallySurveyDraft = {
+  title: string;
+  description?: string;
+  questions: Array<{
+    type: 'short_answer' | 'single_choice' | 'rating_scale';
+    text: string;
+    choices?: Array<string | number>;
+  }>;
+};
+
+export type SallySurveyCreationResponse = {
+  draft: SallySurveyDraft;
+  created: boolean;
+  automation_available: boolean;
+  reason?: string;
+};
+
+export function getSallySurveyDraft(
+  programId: string,
+  kind: SallySurveyKind,
+  signal?: AbortSignal,
+): Promise<{ draft: SallySurveyDraft }> {
+  return apiRequest(`/programs/${encodeURIComponent(programId)}/sally/surveys/draft`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind }),
+    signal,
+  });
+}
+
+export function createSallySurvey(
+  programId: string,
+  kind: SallySurveyKind,
+): Promise<SallySurveyCreationResponse> {
+  return apiRequest(`/programs/${encodeURIComponent(programId)}/sally/surveys/create`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ kind }),
+  });
+}
+
+export function getSallySurveyDescriptionImage(
+  programId: string,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  return apiBlobRequest(
+    `/programs/${encodeURIComponent(programId)}/sally/surveys/description-image`,
+    { signal },
+  );
+}
 
 /**
  * Triggers server-side Playwright automation against sally.coach to download the named survey

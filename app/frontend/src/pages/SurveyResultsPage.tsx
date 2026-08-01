@@ -5,6 +5,7 @@ import { listParticipants, recordSurveyResult, type Participant } from '../api/p
 import { syncSallySurvey } from '../api/sally';
 import { PageShell } from '../components/PageShell';
 import { ProgramContextBar } from '../components/ProgramContextBar';
+import { SallySurveyDraftCard } from '../components/SallySurveyDraftCard';
 
 const SURVEY_STATUS_LABELS: Record<Participant['survey_status'], string> = {
   not_sent: '미발송',
@@ -109,6 +110,7 @@ export function SurveyResultsPage() {
       showStubNote={false}
     >
       <ProgramContextBar programId={programId} />
+      <SallySurveyDraftCard programId={programId} kind="satisfaction" />
       <div className="content-card">
         <h2>Sally 설문 동기화</h2>
         <p className="page-description">

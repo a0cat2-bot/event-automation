@@ -147,7 +147,7 @@ function buildPlaceholderValues(
   };
 }
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replaceAll('&', '&amp;')
     .replaceAll('<', '&lt;')
@@ -164,7 +164,7 @@ function safeFontWeight(value: string): string {
   return /^(?:normal|bold|lighter|bolder|[1-9]00)$/i.test(value) ? value : 'normal';
 }
 
-function mimeTypeForImagePath(path: string): string {
+export function mimeTypeForImagePath(path: string): string {
   switch (extname(path).toLowerCase()) {
     case '.jpg':
     case '.jpeg':
@@ -343,7 +343,7 @@ function renderStandardHtml(params: {
 </html>`;
 }
 
-async function renderLetter(
+export async function renderLetter(
   html: string,
   width: number,
   height: number,

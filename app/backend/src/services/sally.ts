@@ -5,14 +5,14 @@ import { chromium, type Browser, type BrowserContext, type Page } from 'playwrig
 
 import { env } from '../config/env.js';
 import { uploadsRoot } from '../utils/storage.js';
+import type { SallySurveyDraft, SallySurveyQuestion } from './sallySurveyDraft.js';
 
 const sallyHomeUrl = 'https://home.sally.coach/home';
 const actionTimeoutMs = 30_000;
+const creationActionTimeoutMs = 5_000;
 const sessionDirectory = join(uploadsRoot, '.sally-session');
 const sessionStatePath = join(sessionDirectory, 'state.json');
 const exportDirectory = join(uploadsRoot, 'sally-exports');
-
-// TODO: survey creation/duplication automation deferred — this pass only does login + results download
 
 export class SallyConfigurationError extends Error {
   constructor(message: string) {
@@ -42,7 +42,24 @@ export class SallyDownloadError extends Error {
   }
 }
 
-function errorMessage(error: unknown) {
+export class SallyUiMismatchError extends Error {
+  constructor(
+    public readonly step: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = 'SallyUiMismatchError';
+  }
+}
+
+export class SallyCreationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'SallyCreationError';
+  }
+}
+
+export function errorMessage(error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   return env.sallyPassword ? message.replaceAll(env.sallyPassword, '[REDACTED]') : message;
 }
@@ -71,7 +88,7 @@ async function saveStorageState(context: BrowserContext) {
   await chmod(sessionStatePath, 0o600);
 }
 
-async function createBrowserContext(): Promise<{ browser: Browser; context: BrowserContext }> {
+export async function createBrowserContext(): Promise<{ browser: Browser; context: BrowserContext }> {
   // Deployment build step: run `npx playwright install chromium` so the bundled browser exists.
   // --no-sandbox is required on Linux hosts without the kernel namespace privileges Chrome's
   // sandbox needs (WSL2, most Docker/CI containers) — without it, launch() fails immediately.
@@ -200,6 +217,128 @@ export async function downloadSurveyResults(surveyTitleText: string): Promise<st
       throw error;
     }
     throw new SallyDownloadError(`Sally download failed: ${errorMessage(error)}`);
+  } finally {
+    await context?.close().catch(() => undefined);
+    await browser?.close().catch(() => undefined);
+  }
+}
+
+async function creationStep<T>(step: string, action: () => Promise<T>): Promise<T> {
+  try {
+    return await action();
+  } catch (error) {
+    throw new SallyUiMismatchError(
+      step,
+      `Sally survey creation is unavailable at step "${step}": ${errorMessage(error)}`,
+    );
+  }
+}
+
+async function addSurveyQuestion(page: Page, question: SallySurveyQuestion, index: number) {
+  const number = index + 1;
+  await page.getByRole('button', { name: '문항 추가', exact: true }).click({
+    timeout: creationActionTimeoutMs,
+  });
+  await page
+    .getByPlaceholder('질문을 입력해주세요')
+    .nth(index)
+    .fill(question.text, { timeout: creationActionTimeoutMs });
+
+  const typeLabel = {
+    short_answer: '단답형',
+    single_choice: '객관식',
+    rating_scale: '척도형',
+  }[question.type];
+  await page
+    .getByLabel(`${number}번 문항 유형`, { exact: true })
+    .selectOption({ label: typeLabel }, { timeout: creationActionTimeoutMs });
+
+  if (question.type === 'single_choice') {
+    for (const [choiceIndex, choice] of (question.choices ?? []).entries()) {
+      await page
+        .getByLabel(`${number}번 문항 보기 ${choiceIndex + 1}`, { exact: true })
+        .fill(String(choice), { timeout: creationActionTimeoutMs });
+    }
+  }
+
+  if (question.type === 'rating_scale') {
+    const [minimum, , , , maximum] = question.choices ?? [];
+    await page
+      .getByLabel(`${number}번 문항 최솟값`, { exact: true })
+      .fill(String(minimum), { timeout: creationActionTimeoutMs });
+    await page
+      .getByLabel(`${number}번 문항 최댓값`, { exact: true })
+      .fill(String(maximum), { timeout: creationActionTimeoutMs });
+  }
+}
+
+async function discardPartialSurvey(page: Page) {
+  const cancel = page.getByRole('button', { name: '취소', exact: true });
+  if (!(await cancel.isVisible({ timeout: 1_000 }).catch(() => false))) return;
+  await cancel.click({ timeout: creationActionTimeoutMs }).catch(() => undefined);
+  const discard = page.getByRole('button', {
+    name: /(?:저장하지 않고 나가기|작성 취소|삭제)/,
+  });
+  if (await discard.isVisible({ timeout: 1_000 }).catch(() => false)) {
+    await discard.click({ timeout: creationActionTimeoutMs }).catch(() => undefined);
+  }
+}
+
+/**
+ * Creates a survey through Sally's browser UI.
+ *
+ * These selectors could not be verified against Sally from this environment. Keep the four guarded
+ * steps below in UI order so a production mismatch identifies the smallest place to update.
+ */
+export async function createSallySurvey(draft: SallySurveyDraft): Promise<void> {
+  let browser: Browser | undefined;
+  let context: BrowserContext | undefined;
+  let page: Page | undefined;
+  let editorOpened = false;
+
+  try {
+    ({ browser, context } = await createBrowserContext());
+    page = await sallyLogin(context);
+    page.setDefaultTimeout(creationActionTimeoutMs);
+    page.setDefaultNavigationTimeout(creationActionTimeoutMs);
+
+    await creationStep('open survey editor', async () => {
+      await page?.getByRole('button', { name: '설문 만들기', exact: true }).click({
+        timeout: creationActionTimeoutMs,
+      });
+      editorOpened = true;
+    });
+
+    await creationStep('enter title and description', async () => {
+      await page?.getByLabel('설문 제목', { exact: true }).fill(draft.title, {
+        timeout: creationActionTimeoutMs,
+      });
+      if (draft.description) {
+        await page?.getByLabel('설문 설명', { exact: true }).fill(draft.description, {
+          timeout: creationActionTimeoutMs,
+        });
+      }
+    });
+
+    for (const [index, question] of draft.questions.entries()) {
+      await creationStep(`add question ${index + 1}`, () =>
+        addSurveyQuestion(page as Page, question, index),
+      );
+    }
+
+    await creationStep('publish survey', async () => {
+      await page?.getByRole('button', { name: '설문 게시', exact: true }).click({
+        timeout: creationActionTimeoutMs,
+      });
+      await saveStorageState(context as BrowserContext);
+    });
+  } catch (error) {
+    if (error instanceof SallyUiMismatchError) {
+      if (page && editorOpened) await discardPartialSurvey(page);
+      throw error;
+    }
+    if (error instanceof SallyConfigurationError || error instanceof SallyLoginError) throw error;
+    throw new SallyCreationError(`Sally survey creation failed: ${errorMessage(error)}`);
   } finally {
     await context?.close().catch(() => undefined);
     await browser?.close().catch(() => undefined);
