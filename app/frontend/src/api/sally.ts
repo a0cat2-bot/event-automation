@@ -10,7 +10,9 @@ export type SallySurveyKind = 'recruitment' | 'satisfaction';
 
 export type SallySurveyDraft = {
   title: string;
+  team_name?: string;
   description?: string;
+  completion_message?: string;
   questions: Array<{
     type: 'short_answer' | 'single_choice' | 'rating_scale';
     text: string;

@@ -56,6 +56,7 @@ interface ProgramRow {
   id: string;
   name: string;
   business_unit: string;
+  default_coordinator_name: string | null;
   max_participants: number;
   intake_data: unknown;
   selection_mode: SelectionMode | null;
@@ -75,7 +76,12 @@ const selectionModes: SelectionMode[] = [
 async function accessibleProgram(programId: string) {
   const result = await pool.query<ProgramRow>(
     `SELECT p.id, p.name, bu.name AS business_unit, p.max_participants, p.intake_data,
-            p.selection_mode
+            p.selection_mode,
+            (SELECT os.default_coordinator_name
+             FROM org_settings os
+             WHERE os.business_unit IN (bu.name, '')
+             ORDER BY CASE WHEN os.business_unit = bu.name THEN 0 ELSE 1 END
+             LIMIT 1) AS default_coordinator_name
      FROM programs p
      JOIN business_units bu ON bu.id = p.business_unit_id
      WHERE p.id = $1 AND p.deleted_at IS NULL
@@ -224,7 +230,9 @@ sallyRouter.post(
       }
 
       const { kind } = sallySurveyBody.parse(request.body);
-      response.json({ draft: generateSallySurveyDraft(program, kind) });
+      response.json({
+        draft: generateSallySurveyDraft(program, kind, program.default_coordinator_name),
+      });
     } catch (error) {
       next(error);
     }
@@ -328,7 +336,7 @@ sallyRouter.post(
       }
 
       const { kind } = sallySurveyBody.parse(request.body);
-      const draft = generateSallySurveyDraft(program, kind);
+      const draft = generateSallySurveyDraft(program, kind, program.default_coordinator_name);
       try {
         const surveyUrl = await createSallySurvey(request.user!.email, draft);
         if (kind === 'recruitment') {

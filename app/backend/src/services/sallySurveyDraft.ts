@@ -8,12 +8,15 @@ export interface SallySurveyQuestion {
 
 export interface SallySurveyDraft {
   title: string;
+  team_name?: string;
   description?: string;
+  completion_message?: string;
   questions: SallySurveyQuestion[];
 }
 
 export interface SallySurveyProgram {
   name: string;
+  business_unit?: string;
   max_participants: number;
   intake_data: unknown;
 }
@@ -93,17 +96,56 @@ function recruitmentAttendanceQuestion(program: SallySurveyProgram): SallySurvey
   };
 }
 
+function recruitmentCompletionMessage(
+  program: SallySurveyProgram,
+  coordinatorName?: string | null,
+): string | undefined {
+  const { date } = getSallyProgramDetails(program);
+  const detailNoticeDate = intakeText(program.intake_data, 'detail_notice_date');
+  const dressCode = intakeText(program.intake_data, 'dress_code');
+  const managerTimeSupport =
+    Boolean(program.intake_data) &&
+    typeof program.intake_data === 'object' &&
+    !Array.isArray(program.intake_data) &&
+    (program.intake_data as Record<string, unknown>).manager_time_support === true;
+  const coordinator = coordinatorName?.trim();
+  const businessUnit = program.business_unit?.trim();
+  const lines = [
+    ...(detailNoticeDate
+      ? [
+          `${date ? `${date} ` : ''}【${program.name}】관련 세부사항은`,
+          `${detailNoticeDate}에 개인별로 안내드릴 예정입니다.`,
+        ]
+      : []),
+    dressCode
+      ? `참가 당일은 ${dressCode} 착용 ${managerTimeSupport ? '부탁드리며,' : '부탁드립니다.'}`
+      : undefined,
+    managerTimeSupport
+      ? '참여하시는 분들의 부서장님들께는 별도로 시간배려도 요청드릴 예정입니다.'
+      : undefined,
+    coordinator
+      ? `기타 문의사항은 ${businessUnit ? `${businessUnit} ` : ''}${coordinator} 프로에게 문의 부탁드립니다.`
+      : undefined,
+  ].filter((line): line is string => Boolean(line));
+  return lines.length > 0 ? lines.join('\n') : undefined;
+}
+
 export function generateSallySurveyDraft(
   program: SallySurveyProgram,
   kind: SallySurveyKind,
+  coordinatorName?: string | null,
 ): SallySurveyDraft {
   const title = `${program.name} ${kind === 'recruitment' ? '참여자 모집' : '만족도 조사'}`;
+  const teamName = program.business_unit?.trim();
   const description = programDetails(program, kind);
 
   if (kind === 'recruitment') {
+    const completionMessage = recruitmentCompletionMessage(program, coordinatorName);
     return {
       title,
+      ...(teamName ? { team_name: teamName } : {}),
       ...(description ? { description } : {}),
+      ...(completionMessage ? { completion_message: completionMessage } : {}),
       questions: [
         { type: 'short_answer', text: identityQuestion },
         recruitmentAttendanceQuestion(program),
@@ -113,6 +155,7 @@ export function generateSallySurveyDraft(
 
   return {
     title,
+    ...(teamName ? { team_name: teamName } : {}),
     ...(description ? { description } : {}),
     questions: [
       {

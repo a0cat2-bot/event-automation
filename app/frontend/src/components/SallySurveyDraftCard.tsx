@@ -23,7 +23,12 @@ function copyText(draft: SallySurveyDraft): string {
     const choices = question.choices?.length ? `\n보기: ${question.choices.join(' / ')}` : '';
     return `${index + 1}. [${QUESTION_TYPE_LABELS[question.type]}] ${question.text}${choices}`;
   });
-  return [draft.title, draft.description, ...questions].filter(Boolean).join('\n\n');
+  const completionMessage = draft.completion_message
+    ? `제출 완료 메시지\n${draft.completion_message}`
+    : undefined;
+  return [draft.title, draft.description, completionMessage, ...questions]
+    .filter(Boolean)
+    .join('\n\n');
 }
 
 export function SallySurveyDraftCard({
@@ -258,6 +263,14 @@ export function SallySurveyDraftCard({
             <p className="field-hint" style={{ whiteSpace: 'pre-line' }}>
               {draft.description}
             </p>
+          ) : null}
+          {draft.completion_message ? (
+            <div>
+              <strong>제출 완료 메시지</strong>
+              <p className="field-hint" style={{ whiteSpace: 'pre-line' }}>
+                {draft.completion_message}
+              </p>
+            </div>
           ) : null}
           <ol>
             {draft.questions.map((question, index) => (

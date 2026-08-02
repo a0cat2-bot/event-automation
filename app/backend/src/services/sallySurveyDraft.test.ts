@@ -22,6 +22,92 @@ const fixedProgram = {
   },
 };
 
+const completionMessageProgram = {
+  ...fixedProgram,
+  name: 'My Healthy Lab : 운동 클래스',
+  business_unit: 'EHS그룹(AX)',
+  intake_data: {
+    ...fixedProgram.intake_data,
+    program_date: '2026년 9월 25일(금)',
+    detail_notice_date: '2026년 9월 21일(월)',
+    dress_code: '운동하기 편한 복장',
+    manager_time_support: true,
+  },
+};
+
+test('recruitment completion message includes every configured field', () => {
+  const draft = generateSallySurveyDraft(completionMessageProgram, 'recruitment', '김아영');
+
+  assert.equal(
+    draft.completion_message,
+    '2026년 9월 25일(금) 【My Healthy Lab : 운동 클래스】관련 세부사항은\n2026년 9월 21일(월)에 개인별로 안내드릴 예정입니다.\n참가 당일은 운동하기 편한 복장 착용 부탁드리며,\n참여하시는 분들의 부서장님들께는 별도로 시간배려도 요청드릴 예정입니다.\n기타 문의사항은 EHS그룹(AX) 김아영 프로에게 문의 부탁드립니다.',
+  );
+});
+
+test('recruitment completion message omits each absent field cleanly', () => {
+  const cases = [
+    {
+      key: 'detail_notice_date',
+      expected:
+        '참가 당일은 운동하기 편한 복장 착용 부탁드리며,\n참여하시는 분들의 부서장님들께는 별도로 시간배려도 요청드릴 예정입니다.\n기타 문의사항은 EHS그룹(AX) 김아영 프로에게 문의 부탁드립니다.',
+    },
+    {
+      key: 'dress_code',
+      expected:
+        '2026년 9월 25일(금) 【My Healthy Lab : 운동 클래스】관련 세부사항은\n2026년 9월 21일(월)에 개인별로 안내드릴 예정입니다.\n참여하시는 분들의 부서장님들께는 별도로 시간배려도 요청드릴 예정입니다.\n기타 문의사항은 EHS그룹(AX) 김아영 프로에게 문의 부탁드립니다.',
+    },
+    {
+      key: 'manager_time_support',
+      expected:
+        '2026년 9월 25일(금) 【My Healthy Lab : 운동 클래스】관련 세부사항은\n2026년 9월 21일(월)에 개인별로 안내드릴 예정입니다.\n참가 당일은 운동하기 편한 복장 착용 부탁드립니다.\n기타 문의사항은 EHS그룹(AX) 김아영 프로에게 문의 부탁드립니다.',
+    },
+  ] as const;
+
+  for (const { key, expected } of cases) {
+    const intakeData = { ...completionMessageProgram.intake_data };
+    delete intakeData[key];
+    const draft = generateSallySurveyDraft(
+      { ...completionMessageProgram, intake_data: intakeData },
+      'recruitment',
+      '김아영',
+    );
+    assert.equal(draft.completion_message, expected);
+    assert.doesNotMatch(draft.completion_message ?? '', /undefined|\n\n/);
+  }
+
+  const withoutCoordinator = generateSallySurveyDraft(completionMessageProgram, 'recruitment');
+  assert.doesNotMatch(withoutCoordinator.completion_message ?? '', /기타 문의사항|김아영/);
+});
+
+test('recruitment completion message is absent when no completion fields are configured', () => {
+  const draft = generateSallySurveyDraft(fixedProgram, 'recruitment');
+
+  assert.equal(draft.completion_message, undefined);
+  assert.equal(Object.hasOwn(draft, 'completion_message'), false);
+});
+
+test('manager time support false omits its sentence and leaves clean dress-code wording', () => {
+  const draft = generateSallySurveyDraft(
+    {
+      ...completionMessageProgram,
+      intake_data: {
+        dress_code: '운동하기 편한 복장',
+        manager_time_support: false,
+      },
+    },
+    'recruitment',
+  );
+
+  assert.equal(draft.completion_message, '참가 당일은 운동하기 편한 복장 착용 부탁드립니다.');
+  assert.doesNotMatch(draft.completion_message, /부서장|부탁드리며/);
+});
+
+test('satisfaction draft never includes a completion message', () => {
+  const draft = generateSallySurveyDraft(completionMessageProgram, 'satisfaction', '김아영');
+
+  assert.equal(Object.hasOwn(draft, 'completion_message'), false);
+});
+
 test('fixed-time recruitment draft has the import identity and literal attendance choices', () => {
   const draft = generateSallySurveyDraft(fixedProgram, 'recruitment');
 

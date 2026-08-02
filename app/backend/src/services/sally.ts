@@ -385,62 +385,157 @@ async function creationStep<T>(step: string, action: () => Promise<T>): Promise<
   }
 }
 
-async function addSurveyQuestion(page: Page, question: SallySurveyQuestion, index: number) {
-  const number = index + 1;
-  await page.getByRole('button', { name: '문항 추가', exact: true }).click({
-    timeout: creationActionTimeoutMs,
-  });
-  await page
-    .getByPlaceholder('질문을 입력해주세요')
-    .nth(index)
-    .fill(question.text, { timeout: creationActionTimeoutMs });
-
+function surveyQuestionType(question: SallySurveyQuestion) {
   const typeLabel = {
-    short_answer: '단답형',
-    single_choice: '객관식',
-    rating_scale: '척도형',
+    short_answer: '텍스트 응답',
+    single_choice: '단수선택',
+    rating_scale: '등급 척도',
   }[question.type];
-  await page
-    .getByLabel(`${number}번 문항 유형`, { exact: true })
-    .selectOption({ label: typeLabel }, { timeout: creationActionTimeoutMs });
+  return typeLabel;
+}
 
-  if (question.type === 'single_choice') {
-    for (const [choiceIndex, choice] of (question.choices ?? []).entries()) {
-      await page
-        .getByLabel(`${number}번 문항 보기 ${choiceIndex + 1}`, { exact: true })
-        .fill(String(choice), { timeout: creationActionTimeoutMs });
-    }
+async function fillSingleChoiceRows(
+  openCard: ReturnType<Page['locator']>,
+  choices: Array<string | number>,
+) {
+  if (choices.length === 0) {
+    throw new Error('the single-choice question has no choices in its draft');
   }
 
-  if (question.type === 'rating_scale') {
-    const [minimum, , , , maximum] = question.choices ?? [];
-    await page
-      .getByLabel(`${number}번 문항 최솟값`, { exact: true })
-      .fill(String(minimum), { timeout: creationActionTimeoutMs });
-    await page
-      .getByLabel(`${number}번 문항 최댓값`, { exact: true })
-      .fill(String(maximum), { timeout: creationActionTimeoutMs });
+  const choiceInputs = openCard.getByPlaceholder('보기를 입력해주세요');
+  for (const [choiceIndex, choice] of choices.entries()) {
+    if (choiceIndex >= 2) {
+      await openCard.getByText('⊕', { exact: true }).last().click({
+        timeout: creationActionTimeoutMs,
+      });
+    }
+
+    const choiceInput = choiceInputs.nth(choiceIndex);
+    try {
+      await choiceInput.waitFor({ state: 'visible', timeout: creationActionTimeoutMs });
+    } catch {
+      throw new Error(
+        `expected choice row ${choiceIndex + 1} of ${choices.length} did not appear in the open question card`,
+      );
+    }
+    await choiceInput.fill(String(choice), { timeout: creationActionTimeoutMs });
   }
 }
 
-async function discardPartialSurvey(page: Page) {
-  const cancel = page.getByRole('button', { name: '취소', exact: true });
-  if (!(await cancel.isVisible({ timeout: 1_000 }).catch(() => false))) return;
-  await cancel.click({ timeout: creationActionTimeoutMs }).catch(() => undefined);
-  const discard = page.getByRole('button', {
-    name: /(?:저장하지 않고 나가기|작성 취소|삭제)/,
+async function addSurveyQuestion(page: Page, question: SallySurveyQuestion) {
+  await page.getByText(surveyQuestionType(question), { exact: true }).click({
+    timeout: creationActionTimeoutMs,
   });
-  if (await discard.isVisible({ timeout: 1_000 }).catch(() => false)) {
-    await discard.click({ timeout: creationActionTimeoutMs }).catch(() => undefined);
+
+  const questionEditor = page.locator('.ProseMirror-focused');
+  await questionEditor.pressSequentially(question.text, {
+    timeout: creationActionTimeoutMs,
+  });
+  const openCard = page
+    .locator('div')
+    .filter({ has: questionEditor })
+    .filter({ has: page.getByText('저장', { exact: true }) })
+    .last();
+
+  if (question.type === 'single_choice') {
+    await fillSingleChoiceRows(openCard, question.choices ?? []);
   }
+
+  await openCard.getByText('필수', { exact: true }).click({
+    timeout: creationActionTimeoutMs,
+  });
+  await openCard.getByText('저장', { exact: true }).click({
+    timeout: creationActionTimeoutMs,
+  });
 }
 
 /**
- * Creates a survey through Sally's browser UI.
- *
- * These selectors could not be verified against Sally from this environment. Keep the guarded
- * steps below in UI order so a production mismatch identifies the smallest place to update.
+ * Populates the draft created by Sally's editor and returns its editor URL.
+ * Selectors were measured against the live Sally editor on 2026-08-02.
  */
+export async function createSallySurveyInEditor(
+  page: Page,
+  draft: SallySurveyDraft,
+): Promise<string> {
+  await creationStep('open survey editor', async () => {
+    await page.getByText('작성하기', { exact: true }).click({
+      timeout: creationActionTimeoutMs,
+    });
+    const blankSurvey = page.getByText('기본 서식 만들기', { exact: true }).first();
+    await Promise.all([
+      page.waitForURL(
+        (url) =>
+          url.protocol === 'https:' &&
+          url.hostname === 'sally.coach' &&
+          /^\/workspaces\/[^/]+\/surveys\/[^/]+\/edit\/?$/.test(url.pathname),
+        { timeout: creationActionTimeoutMs },
+      ),
+      blankSurvey.click({ timeout: creationActionTimeoutMs }),
+    ]);
+  });
+
+  await creationStep('enter survey details', async () => {
+    await page.locator('input.base-input-line__inner__content').first().fill(draft.title, {
+      timeout: creationActionTimeoutMs,
+    });
+    if (draft.team_name) {
+      await page.getByPlaceholder('팀명을 입력해주세요').fill(draft.team_name, {
+        timeout: creationActionTimeoutMs,
+      });
+    }
+    if (draft.description) {
+      const descriptionEditor = page.locator('.ProseMirror').first();
+      await descriptionEditor.click({ timeout: creationActionTimeoutMs });
+      await descriptionEditor.pressSequentially(draft.description, {
+        timeout: creationActionTimeoutMs,
+      });
+    }
+    // TODO: Map the measured "이미지 추가" control before implementing intro banner uploads.
+  });
+
+  if (draft.completion_message) {
+    const completionMessage = draft.completion_message;
+    await creationStep('enter completion message', async () => {
+      const submitHeading = page.getByText('설문 제출', { exact: true });
+      const submitSection = page
+        .locator('div')
+        .filter({ has: submitHeading })
+        .filter({ hasText: '설문이 성공적으로 제출되었습니다.' })
+        .last();
+      const completionEditor = submitSection.locator('.ProseMirror').nth(1);
+      await completionEditor.click({ timeout: creationActionTimeoutMs });
+      await completionEditor.pressSequentially(completionMessage, {
+        timeout: creationActionTimeoutMs,
+      });
+    });
+  }
+
+  for (const [index, question] of draft.questions.entries()) {
+    await creationStep(`add question ${index + 1}`, () => addSurveyQuestion(page, question));
+  }
+
+  await creationStep('wait for draft save', async () => {
+    await page.getByText('저장됨', { exact: true }).waitFor({
+      state: 'visible',
+      timeout: creationActionTimeoutMs,
+    });
+  });
+
+  return creationStep('capture editor URL', async () => {
+    const currentUrl = page.url();
+    const parsed = new URL(currentUrl);
+    if (
+      parsed.protocol !== 'https:' ||
+      parsed.hostname !== 'sally.coach' ||
+      !/^\/workspaces\/[^/]+\/surveys\/[^/]+\/edit\/?$/.test(parsed.pathname)
+    ) {
+      throw new Error(`the current address is not a Sally survey editor URL: ${currentUrl}`);
+    }
+    return parsed.href;
+  });
+}
+
+/** Creates and fills an autosaved Sally survey draft without publishing it. */
 export async function createSallySurvey(
   coordinatorEmail: string,
   draft: SallySurveyDraft,
@@ -448,7 +543,6 @@ export async function createSallySurvey(
   let browser: Browser | undefined;
   let context: BrowserContext | undefined;
   let page: Page | undefined;
-  let editorOpened = false;
   let storedSession: StoredSallySession | undefined;
 
   try {
@@ -467,61 +561,13 @@ export async function createSallySurvey(
     });
     page.setDefaultTimeout(creationActionTimeoutMs);
     page.setDefaultNavigationTimeout(creationActionTimeoutMs);
-
-    await creationStep('open survey editor', async () => {
-      await page?.getByRole('button', { name: '설문 만들기', exact: true }).click({
-        timeout: creationActionTimeoutMs,
-      });
-      editorOpened = true;
-    });
-
-    await creationStep('enter title and description', async () => {
-      await page?.getByLabel('설문 제목', { exact: true }).fill(draft.title, {
-        timeout: creationActionTimeoutMs,
-      });
-      if (draft.description) {
-        await page?.getByLabel('설문 설명', { exact: true }).fill(draft.description, {
-          timeout: creationActionTimeoutMs,
-        });
-      }
-    });
-
-    for (const [index, question] of draft.questions.entries()) {
-      await creationStep(`add question ${index + 1}`, () =>
-        addSurveyQuestion(page as Page, question, index),
-      );
-    }
-
-    await creationStep('publish survey', async () => {
-      await page?.getByRole('button', { name: '설문 게시', exact: true }).click({
-        timeout: creationActionTimeoutMs,
-      });
-      await page?.waitForTimeout(750);
-    });
-
-    const surveyUrl = await creationStep('capture survey URL', async () => {
-      const currentUrl = page?.url();
-      if (!currentUrl) throw new Error('the published survey page has no address');
-      const parsed = new URL(currentUrl);
-      if (
-        parsed.protocol !== 'https:' ||
-        !/(?:^|\.)sally\.coach$/i.test(parsed.hostname) ||
-        parsed.href === sallyHomeUrl ||
-        parsed.pathname === '/home'
-      ) {
-        throw new Error(`the post-publish address is not a Sally survey URL: ${currentUrl}`);
-      }
-      return parsed.href;
-    });
+    const surveyUrl = await createSallySurveyInEditor(page, draft);
     if (storedSession) {
       await refreshSallySession(coordinatorEmail, await context.storageState());
     }
     return surveyUrl;
   } catch (error) {
-    if (error instanceof SallyUiMismatchError) {
-      if (page && editorOpened) await discardPartialSurvey(page);
-      throw error;
-    }
+    if (error instanceof SallyUiMismatchError) throw error;
     if (
       error instanceof SallyConfigurationError ||
       error instanceof SallySessionConfigurationError ||
