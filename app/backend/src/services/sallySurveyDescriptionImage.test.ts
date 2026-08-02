@@ -11,6 +11,7 @@ const fullProgram = {
     program_date: '2026년 7월 15일(수)',
     program_time: '11:00~12:00',
     program_location: '온라인(Teams)',
+    application_deadline: '2026년 7월 10일(금)',
   },
 };
 
@@ -37,6 +38,8 @@ test('all programme fields and the character image are rendered from their real 
   assert.match(html, /리더십 코칭 워크숍/);
   assert.match(html, /팀장의 코칭 역량을 함께 키우는 실습형 워크숍입니다\./);
   assert.match(html, /2026년 7월 15일\(수\) 11:00~12:00/);
+  assert.match(html, /신청 마감/);
+  assert.match(html, /2026년 7월 10일\(금\)/);
   assert.match(html, /온라인\(Teams\)/);
   assert.match(html, /src="data:image\/png;base64,character"/);
   assert.match(html, /width: 1200px; height: 675px/);
@@ -102,6 +105,9 @@ test('long content preserves the programme name and applies the compact title an
 
   assert.match(html, new RegExp(programName));
   assert.match(html, /class="canvas long-name long-description"/);
+  assert.match(html, />일시</);
+  assert.match(html, />장소</);
+  assert.match(html, /신청 마감/);
   assert.match(html, /\.content \{[^}]*overflow: hidden;/);
   assert.match(html, /\.long-name h1 \{[^}]*font-size: 54px;/);
   assert.match(html, /\.long-description \.description \{[^}]*-webkit-line-clamp: 2;/);

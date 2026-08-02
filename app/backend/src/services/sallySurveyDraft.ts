@@ -23,6 +23,7 @@ export interface SallyProgramDetails {
   date?: string;
   time?: string;
   location?: string;
+  application_deadline?: string;
 }
 
 const identityQuestion =
@@ -41,16 +42,21 @@ export function getSallyProgramDetails(program: SallySurveyProgram): SallyProgra
     date: intakeText(program.intake_data, 'program_date'),
     time: intakeText(program.intake_data, 'program_time'),
     location: intakeText(program.intake_data, 'program_location'),
+    application_deadline: intakeText(program.intake_data, 'application_deadline'),
   };
 }
 
 function programDetails(program: SallySurveyProgram, kind: SallySurveyKind): string | undefined {
-  const { description, date, time, location } = getSallyProgramDetails(program);
+  const { description, date, time, location, application_deadline } =
+    getSallyProgramDetails(program);
   const dateTime = [date, time].filter(Boolean).join(' ');
   const details = [
     description,
     dateTime ? `일시: ${dateTime}` : undefined,
     location ? `장소: ${location}` : undefined,
+    kind === 'recruitment' && application_deadline
+      ? `신청 마감: ${application_deadline}`
+      : undefined,
     kind === 'recruitment' ? `모집 인원: ${program.max_participants}명` : undefined,
   ].filter((value): value is string => Boolean(value));
   return details.length > 0 ? details.join('\n') : undefined;

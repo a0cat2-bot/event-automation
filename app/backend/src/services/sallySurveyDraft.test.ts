@@ -18,6 +18,7 @@ const fixedProgram = {
     program_date: '2026년 7월 15일(수)',
     program_time: '11:00~12:00',
     program_location: '온라인(Teams)',
+    application_deadline: '2026년 7월 10일(금)',
   },
 };
 
@@ -27,7 +28,7 @@ test('fixed-time recruitment draft has the import identity and literal attendanc
   assert.equal(draft.title, '리더십 워크숍 참여자 모집');
   assert.equal(
     draft.description,
-    '팀장의 코칭 역량을 키우는 워크숍입니다.\n일시: 2026년 7월 15일(수) 11:00~12:00\n장소: 온라인(Teams)\n모집 인원: 24명',
+    '팀장의 코칭 역량을 키우는 워크숍입니다.\n일시: 2026년 7월 15일(수) 11:00~12:00\n장소: 온라인(Teams)\n신청 마감: 2026년 7월 10일(금)\n모집 인원: 24명',
   );
   assert.deepEqual(draft.questions, [
     {
@@ -84,7 +85,7 @@ test('missing location and description are omitted cleanly', () => {
   );
 
   assert.equal(draft.description, '일시: 2026년 9월 1일 09:00~10:00\n모집 인원: 8명');
-  assert.doesNotMatch(JSON.stringify(draft), /undefined|장소:|\(\)|\[\]/);
+  assert.doesNotMatch(JSON.stringify(draft), /undefined|장소:|신청 마감:|\(\)|\[\]/);
 });
 
 test('satisfaction draft uses an integer 1-5 scale and a free-text suggestion', () => {
@@ -95,6 +96,7 @@ test('satisfaction draft uses an integer 1-5 scale and a free-text suggestion', 
     draft.description,
     '팀장의 코칭 역량을 키우는 워크숍입니다.\n일시: 2026년 7월 15일(수) 11:00~12:00\n장소: 온라인(Teams)',
   );
+  assert.doesNotMatch(JSON.stringify(draft), /신청 마감|2026년 7월 10일\(금\)/);
   assert.deepEqual(draft.questions, [
     {
       type: 'rating_scale',

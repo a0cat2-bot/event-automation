@@ -9,11 +9,19 @@ export function buildSallySurveyDescriptionHtml(params: {
   orgDisplayName: string;
   characterDataUrl: string | null;
 }): string {
-  const { description, date, time, location } = getSallyProgramDetails(params.program);
+  const { description, date, time, location, application_deadline } = getSallyProgramDetails(
+    params.program,
+  );
   const dateTime = [date, time].filter(Boolean).join(' ');
+  const schedule = [
+    dateTime ? `<span>${escapeHtml(dateTime)}</span>` : '',
+    application_deadline
+      ? `<span class="detail-deadline">${dateTime ? '신청 마감 ' : ''}${escapeHtml(application_deadline)}</span>`
+      : '',
+  ].join('');
   const details = [
-    dateTime
-      ? `<div class="detail"><span class="detail-label">일시</span><span class="detail-value">${escapeHtml(dateTime)}</span></div>`
+    schedule
+      ? `<div class="detail"><span class="detail-label">${dateTime ? '일시' : '마감'}</span><span class="detail-value detail-value--schedule">${schedule}</span></div>`
       : '',
     location
       ? `<div class="detail"><span class="detail-label">장소</span><span class="detail-value">${escapeHtml(location)}</span></div>`
@@ -56,6 +64,8 @@ export function buildSallySurveyDescriptionHtml(params: {
   .detail { display: grid; grid-template-columns: 92px minmax(0, 1fr); gap: 18px; align-items: start; min-width: 0; padding-top: 22px; border-top: 3px solid #3182f6; }
   .detail-label { color: #1b64da; font-size: 44px; font-weight: 700; line-height: 1.2; }
   .detail-value { min-width: 0; color: #1f1d1a; font-size: 44px; font-weight: 600; line-height: 1.2; letter-spacing: -1px; overflow-wrap: anywhere; word-break: keep-all; }
+  .detail-value--schedule { display: grid; gap: 8px; }
+  .detail-deadline { color: #4d4a43; font-size: 30px; line-height: 1.2; letter-spacing: -.6px; }
 </style>
 </head>
 <body>
