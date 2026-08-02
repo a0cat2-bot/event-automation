@@ -47,6 +47,11 @@ export const sallySurveyBody = z.object({
   kind: z.enum(['recruitment', 'satisfaction']),
 });
 
+export const sallySessionBody = z.object({
+  sally_id: z.string().trim().min(1).max(255),
+  password: z.string().min(1).max(1_000),
+});
+
 export const sallySurveyDescriptionImageParams = z.object({
   program_id: z.string().uuid(),
 });

@@ -50,6 +50,7 @@ apiRouter.use('/ai-settings', requireRoleByMethod('viewer', 'admin'));
 
 // Program operation. Viewers may read; only coordinators and above may change anything.
 // Business-unit scoping is enforced per program inside the routers.
+apiRouter.use('/sally', requireRoleByMethod('viewer', 'coordinator'));
 apiRouter.use('/programs', requireRoleByMethod('viewer', 'coordinator'));
 apiRouter.use('/letters', requireRoleByMethod('viewer', 'coordinator'));
 apiRouter.use('/letter-templates', requireRoleByMethod('viewer', 'coordinator'));

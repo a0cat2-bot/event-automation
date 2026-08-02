@@ -1,9 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 
 import {
+  connectSallySession,
   createSallySurvey,
+  disconnectSallySession,
+  getSallySessionStatus,
   getSallySurveyDescriptionImage,
   getSallySurveyDraft,
+  type SallySessionStatus,
   type SallySurveyDraft,
   type SallySurveyKind,
 } from '../api/sally';
@@ -36,6 +40,10 @@ export function SallySurveyDraftCard({
   const [isCreating, setIsCreating] = useState(false);
   const [actionMessage, setActionMessage] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [sessionStatus, setSessionStatus] = useState<SallySessionStatus | null>(null);
+  const [sessionError, setSessionError] = useState<string | null>(null);
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -44,11 +52,21 @@ export function SallySurveyDraftCard({
     setLoadError(null);
     setDescriptionImageUrl(null);
     setImageError(null);
+    setSessionStatus(null);
+    setSessionError(null);
     getSallySurveyDraft(programId, kind, controller.signal)
       .then(({ draft: nextDraft }) => setDraft(nextDraft))
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return;
         setLoadError(error instanceof Error ? error.message : '설문 초안을 불러오지 못했습니다.');
+      });
+    getSallySessionStatus(controller.signal)
+      .then(setSessionStatus)
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') return;
+        setSessionError(
+          error instanceof Error ? error.message : 'Sally 연결 상태를 불러오지 못했습니다.',
+        );
       });
     getSallySurveyDescriptionImage(programId, controller.signal)
       .then((image) => {
@@ -97,9 +115,48 @@ export function SallySurveyDraftCard({
         );
       }
     } catch (error) {
-      setActionError(error instanceof Error ? error.message : 'Sally에 설문을 생성하지 못했습니다.');
+      setActionError(
+        error instanceof Error ? error.message : 'Sally에 설문을 생성하지 못했습니다.',
+      );
     } finally {
       setIsCreating(false);
+    }
+  }
+
+  async function handleConnect(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const sallyId = String(formData.get('sally_id') ?? '').trim();
+    let password = String(formData.get('password') ?? '');
+    formData.delete('password');
+    form.reset();
+
+    setIsConnecting(true);
+    setSessionError(null);
+    try {
+      const status = await connectSallySession(sallyId, password);
+      setSessionStatus(status);
+      setActionMessage('Sally 계정을 연결했습니다. 비밀번호는 저장하지 않았습니다.');
+    } catch (error) {
+      setSessionError(error instanceof Error ? error.message : 'Sally 계정을 연결하지 못했습니다.');
+    } finally {
+      password = '';
+      setIsConnecting(false);
+    }
+  }
+
+  async function handleDisconnect() {
+    setIsDisconnecting(true);
+    setSessionError(null);
+    try {
+      await disconnectSallySession();
+      setSessionStatus({ connected: false, stored_at: null, last_used_at: null });
+      setActionMessage('Sally 계정 연결을 해제했습니다.');
+    } catch (error) {
+      setSessionError(error instanceof Error ? error.message : 'Sally 연결을 해제하지 못했습니다.');
+    } finally {
+      setIsDisconnecting(false);
     }
   }
 
@@ -116,6 +173,60 @@ export function SallySurveyDraftCard({
           </p>
         </div>
       </div>
+
+      <div className="template-card" aria-label="Sally 계정 연결">
+        <span
+          className={
+            sessionStatus?.connected
+              ? 'status-badge status-badge--success'
+              : 'status-badge status-badge--warning'
+          }
+        >
+          {sessionStatus?.connected ? 'Sally 연결됨' : 'Sally 연결 안 됨'}
+        </span>
+        {sessionStatus?.connected ? (
+          <>
+            <p className="field-hint">현재 로그인한 코디네이터의 암호화된 세션을 사용합니다.</p>
+            <button
+              className="button button--quiet"
+              type="button"
+              onClick={handleDisconnect}
+              disabled={isDisconnecting}
+            >
+              {isDisconnecting ? '연결 해제 중…' : '연결 해제'}
+            </button>
+          </>
+        ) : (
+          <form className="sally-session-form" onSubmit={handleConnect}>
+            <p className="field-hint field-hint--warning">
+              연결하면 현재 본인 브라우저에서 이용 중인 Sally에서 로그아웃됩니다.
+            </p>
+            <label>
+              Sally 아이디
+              <input name="sally_id" autoComplete="username" required disabled={isConnecting} />
+            </label>
+            <label>
+              Sally 비밀번호
+              <input
+                name="password"
+                type="password"
+                autoComplete="off"
+                required
+                disabled={isConnecting}
+              />
+            </label>
+            <button className="button button--secondary" type="submit" disabled={isConnecting}>
+              {isConnecting ? '연결 중…' : 'Sally 연결'}
+            </button>
+            <small className="field-hint">비밀번호는 로그인에만 사용하고 저장하지 않습니다.</small>
+          </form>
+        )}
+      </div>
+      {sessionError ? (
+        <p className="form-error" role="alert">
+          {sessionError}
+        </p>
+      ) : null}
 
       {!draft && !loadError ? <p className="field-hint">설문 초안을 불러오는 중입니다…</p> : null}
       {loadError ? (
@@ -167,7 +278,7 @@ export function SallySurveyDraftCard({
               className="button button--primary"
               type="button"
               onClick={handleCreate}
-              disabled={isCreating}
+              disabled={isCreating || !sessionStatus?.connected}
             >
               {isCreating ? 'Sally에 생성 중…' : 'Sally에 생성'}
             </button>

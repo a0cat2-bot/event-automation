@@ -1,18 +1,38 @@
-import { access, chmod, mkdir } from 'node:fs/promises';
+import { mkdir, rm, rmdir } from 'node:fs/promises';
 import { join } from 'node:path';
 
-import { chromium, type Browser, type BrowserContext, type Page } from 'playwright';
+import {
+  chromium,
+  type Browser,
+  type BrowserContext,
+  type BrowserContextOptions,
+  type Page,
+} from 'playwright';
 
 import { env } from '../config/env.js';
 import { uploadsRoot } from '../utils/storage.js';
+import {
+  refreshSallySession,
+  resolveSallySession,
+  SallyConnectionRequiredError,
+  SallySessionConfigurationError,
+  storeSallySession,
+  type StoredSallySession,
+  type SallyStorageState,
+} from './sallySession.js';
 import type { SallySurveyDraft, SallySurveyQuestion } from './sallySurveyDraft.js';
 
 const sallyHomeUrl = 'https://home.sally.coach/home';
 const actionTimeoutMs = 30_000;
 const creationActionTimeoutMs = 5_000;
-const sessionDirectory = join(uploadsRoot, '.sally-session');
-const sessionStatePath = join(sessionDirectory, 'state.json');
+const legacySessionDirectory = join(uploadsRoot, '.sally-session');
+const legacySessionStatePath = join(legacySessionDirectory, 'state.json');
 const exportDirectory = join(uploadsRoot, 'sally-exports');
+
+export interface SallyCredentials {
+  email: string;
+  password: string;
+}
 
 export class SallyConfigurationError extends Error {
   constructor(message: string) {
@@ -59,36 +79,47 @@ export class SallyCreationError extends Error {
   }
 }
 
-export function errorMessage(error: unknown) {
-  const message = error instanceof Error ? error.message : String(error);
-  return env.sallyPassword ? message.replaceAll(env.sallyPassword, '[REDACTED]') : message;
+export function errorMessage(error: unknown, suppliedSecrets: Array<string | undefined> = []) {
+  let message = error instanceof Error ? error.message : String(error);
+  const secrets = [
+    ...new Set([env.sallyPassword, ...suppliedSecrets].filter(Boolean) as string[]),
+  ].sort((left, right) => right.length - left.length);
+  for (const secret of secrets) message = message.replaceAll(secret, '[REDACTED]');
+  return message;
 }
 
-function credentials() {
+function fallbackCredentials(): SallyCredentials | undefined {
+  if (!env.sallyEmail && !env.sallyPassword) return undefined;
   if (!env.sallyEmail || !env.sallyPassword) {
     throw new SallyConfigurationError(
-      'Sally login failed: SALLY_EMAIL and SALLY_PASSWORD are required',
+      'Sally login failed: SALLY_EMAIL and SALLY_PASSWORD must both be configured',
     );
   }
   return { email: env.sallyEmail, password: env.sallyPassword };
 }
 
-async function savedStorageStatePath() {
+export async function removeLegacySallySession(): Promise<void> {
+  await rm(legacySessionStatePath, { force: true });
   try {
-    await access(sessionStatePath);
-    return sessionStatePath;
-  } catch {
-    return undefined;
+    await rmdir(legacySessionDirectory);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT' && code !== 'ENOTEMPTY') throw error;
   }
 }
 
-async function saveStorageState(context: BrowserContext) {
-  await mkdir(sessionDirectory, { recursive: true });
-  await context.storageState({ path: sessionStatePath });
-  await chmod(sessionStatePath, 0o600);
+export function sallyBrowserContextOptions(
+  storageState?: SallyStorageState,
+): BrowserContextOptions {
+  return {
+    acceptDownloads: true,
+    // Sally localizes the logged-out UI from the browser locale; the login selectors are Korean.
+    locale: 'ko-KR',
+    storageState,
+  };
 }
 
-export async function createBrowserContext(): Promise<{ browser: Browser; context: BrowserContext }> {
+async function launchBrowserContext(storageState?: SallyStorageState) {
   // Deployment build step: run `npx playwright install chromium` so the bundled browser exists.
   // --no-sandbox is required on Linux hosts without the kernel namespace privileges Chrome's
   // sandbox needs (WSL2, most Docker/CI containers) — without it, launch() fails immediately.
@@ -98,18 +129,61 @@ export async function createBrowserContext(): Promise<{ browser: Browser; contex
     headless: true,
     args: ['--no-sandbox', '--disable-setuid-sandbox'],
   });
-  const storageState = await savedStorageStatePath();
-
-  let context: BrowserContext;
   try {
-    context = await browser.newContext({ acceptDownloads: true, storageState });
-  } catch {
-    // A truncated or incompatible local state file should not prevent a fresh login.
-    context = await browser.newContext({ acceptDownloads: true });
+    const context = await browser.newContext(sallyBrowserContextOptions(storageState));
+    context.setDefaultTimeout(actionTimeoutMs);
+    context.setDefaultNavigationTimeout(actionTimeoutMs);
+    return { browser, context };
+  } catch (error) {
+    await browser.close().catch(() => undefined);
+    throw error;
   }
-  context.setDefaultTimeout(actionTimeoutMs);
-  context.setDefaultNavigationTimeout(actionTimeoutMs);
-  return { browser, context };
+}
+
+export async function createBrowserContext(coordinatorEmail?: string): Promise<{
+  browser: Browser;
+  context: BrowserContext;
+  loginCredentials?: SallyCredentials;
+  storedSession?: StoredSallySession;
+}> {
+  if (!coordinatorEmail) {
+    const loginCredentials = fallbackCredentials();
+    if (!loginCredentials) {
+      throw new SallyConfigurationError(
+        'Sally login failed: connect a Sally account or configure SALLY_EMAIL and SALLY_PASSWORD',
+      );
+    }
+    return { ...(await launchBrowserContext()), loginCredentials };
+  }
+
+  let storedSession: StoredSallySession | undefined;
+  let loginCredentials: SallyCredentials | undefined;
+  try {
+    storedSession = await resolveSallySession(coordinatorEmail);
+  } catch (error) {
+    if (!(error instanceof SallyConnectionRequiredError)) throw error;
+    if (error.expired) throw error;
+    loginCredentials = fallbackCredentials();
+    if (!loginCredentials) throw error;
+  }
+
+  try {
+    return {
+      ...(await launchBrowserContext(storedSession?.storageState)),
+      loginCredentials,
+      storedSession,
+    };
+  } catch (error) {
+    if (storedSession) {
+      throw new SallyConnectionRequiredError(
+        'The stored Sally session is no longer usable. Reconnect the Sally account.',
+        true,
+        storedSession.storedAt,
+        storedSession.lastUsedAt,
+      );
+    }
+    throw error;
+  }
 }
 
 async function openHome(page: Page) {
@@ -121,11 +195,25 @@ async function openHome(page: Page) {
   await page.waitForTimeout(750);
 }
 
+function isSallyWorkspaceUrl(url: URL): boolean {
+  return (
+    url.protocol === 'https:' &&
+    url.hostname === 'sally.coach' &&
+    /^\/workspaces\/[^/]+(?:\/|$)/.test(url.pathname)
+  );
+}
+
 /**
  * Opens Sally using the context's loaded storage state and performs the recorded login flow only
  * when the logged-out control is visible. The returned page remains owned by the caller.
  */
-export async function sallyLogin(context: BrowserContext): Promise<Page> {
+export async function sallyLogin(
+  context: BrowserContext,
+  options: {
+    credentials?: SallyCredentials;
+    connectionRequiredError?: SallyConnectionRequiredError;
+  } = {},
+): Promise<Page> {
   const page = await context.newPage();
   page.setDefaultTimeout(actionTimeoutMs);
   page.setDefaultNavigationTimeout(actionTimeoutMs);
@@ -133,26 +221,70 @@ export async function sallyLogin(context: BrowserContext): Promise<Page> {
   try {
     await openHome(page);
     const loginEntry = page.locator('#home-body-main').getByText('로그인/회원가입');
-    if (!(await loginEntry.isVisible())) return page;
+    if (!(await loginEntry.isVisible())) {
+      if (isSallyWorkspaceUrl(new URL(page.url()))) return page;
+      throw (
+        options.connectionRequiredError ??
+        new Error('the login entry was unavailable and no Sally workspace session was found')
+      );
+    }
 
-    const { email, password } = credentials();
+    const loginCredentials =
+      options.credentials ?? (options.connectionRequiredError ? undefined : fallbackCredentials());
+    if (!loginCredentials) {
+      throw options.connectionRequiredError ?? new SallyConnectionRequiredError();
+    }
+    const { email, password } = loginCredentials;
     await loginEntry.click();
     await page.getByPlaceholder('아이디 또는 이메일을 입력하세요').fill(email);
     await page.getByPlaceholder('비밀번호를 입력하세요').fill(password);
     await page.getByPlaceholder('비밀번호를 입력하세요').press('Enter');
-    await page.getByText('확인').click();
+    const duplicateSessionConfirmText = page.getByText('확인', { exact: true });
+    const workspaceNavigation = page
+      .waitForURL(isSallyWorkspaceUrl, { timeout: actionTimeoutMs })
+      .then(() => true)
+      .catch(() => false);
+    const loginOutcome = await Promise.race([
+      workspaceNavigation.then((reached) => (reached ? 'workspace' : 'failed')),
+      duplicateSessionConfirmText
+        .waitFor({ state: 'visible', timeout: 5_000 })
+        .then(() => 'confirm' as const)
+        .catch(() => 'no-confirm' as const),
+    ]);
+    if (loginOutcome === 'confirm') {
+      await duplicateSessionConfirmText.locator('..').click();
+    }
 
-    await openHome(page);
-    if (await page.locator('#home-body-main').getByText('로그인/회원가입').isVisible()) {
+    if (loginOutcome !== 'workspace' && !(await workspaceNavigation)) {
       throw new Error('credentials were rejected or the login session was not established');
     }
 
-    await saveStorageState(context);
     return page;
   } catch (error) {
     await page.close().catch(() => undefined);
-    if (error instanceof SallyConfigurationError) throw error;
-    throw new SallyLoginError(`Sally login failed: ${errorMessage(error)}`);
+    if (error instanceof SallyConfigurationError || error instanceof SallyConnectionRequiredError) {
+      throw error;
+    }
+    throw new SallyLoginError(
+      `Sally login failed: ${errorMessage(error, [options.credentials?.password])}`,
+    );
+  }
+}
+
+export async function connectSallyAccount(
+  coordinatorEmail: string,
+  credentials: SallyCredentials,
+): Promise<void> {
+  let browser: Browser | undefined;
+  let context: BrowserContext | undefined;
+  try {
+    ({ browser, context } = await launchBrowserContext());
+    await sallyLogin(context, { credentials });
+    await storeSallySession(coordinatorEmail, await context.storageState());
+  } finally {
+    credentials.password = '';
+    await context?.close().catch(() => undefined);
+    await browser?.close().catch(() => undefined);
   }
 }
 
@@ -170,13 +302,28 @@ function exportTimestamp() {
 }
 
 /** Downloads the first survey whose visible title text matches `surveyTitleText`. */
-export async function downloadSurveyResults(surveyTitleText: string): Promise<string> {
+export async function downloadSurveyResults(
+  coordinatorEmail: string,
+  surveyTitleText: string,
+): Promise<string> {
   let browser: Browser | undefined;
   let context: BrowserContext | undefined;
+  let storedSession: StoredSallySession | undefined;
 
   try {
-    ({ browser, context } = await createBrowserContext());
-    const page = await sallyLogin(context);
+    const browserContext = await createBrowserContext(coordinatorEmail);
+    ({ browser, context, storedSession } = browserContext);
+    const page = await sallyLogin(context, {
+      credentials: browserContext.loginCredentials,
+      connectionRequiredError: storedSession
+        ? new SallyConnectionRequiredError(
+            'The stored Sally session has expired. Reconnect the Sally account.',
+            true,
+            storedSession.storedAt,
+            storedSession.lastUsedAt,
+          )
+        : undefined,
+    });
     const survey = page.getByText(surveyTitleText).first();
 
     try {
@@ -205,11 +352,15 @@ export async function downloadSurveyResults(surveyTitleText: string): Promise<st
       `${exportTimestamp()}-${sanitizedTitle(surveyTitleText)}.xlsx`,
     );
     await download.saveAs(filePath);
-    await saveStorageState(context);
+    if (storedSession) {
+      await refreshSallySession(coordinatorEmail, await context.storageState());
+    }
     return filePath;
   } catch (error) {
     if (
       error instanceof SallyConfigurationError ||
+      error instanceof SallySessionConfigurationError ||
+      error instanceof SallyConnectionRequiredError ||
       error instanceof SallyLoginError ||
       error instanceof SallySurveyNotFoundError ||
       error instanceof SallyDownloadError
@@ -290,15 +441,30 @@ async function discardPartialSurvey(page: Page) {
  * These selectors could not be verified against Sally from this environment. Keep the guarded
  * steps below in UI order so a production mismatch identifies the smallest place to update.
  */
-export async function createSallySurvey(draft: SallySurveyDraft): Promise<string> {
+export async function createSallySurvey(
+  coordinatorEmail: string,
+  draft: SallySurveyDraft,
+): Promise<string> {
   let browser: Browser | undefined;
   let context: BrowserContext | undefined;
   let page: Page | undefined;
   let editorOpened = false;
+  let storedSession: StoredSallySession | undefined;
 
   try {
-    ({ browser, context } = await createBrowserContext());
-    page = await sallyLogin(context);
+    const browserContext = await createBrowserContext(coordinatorEmail);
+    ({ browser, context, storedSession } = browserContext);
+    page = await sallyLogin(context, {
+      credentials: browserContext.loginCredentials,
+      connectionRequiredError: storedSession
+        ? new SallyConnectionRequiredError(
+            'The stored Sally session has expired. Reconnect the Sally account.',
+            true,
+            storedSession.storedAt,
+            storedSession.lastUsedAt,
+          )
+        : undefined,
+    });
     page.setDefaultTimeout(creationActionTimeoutMs);
     page.setDefaultNavigationTimeout(creationActionTimeoutMs);
 
@@ -331,10 +497,9 @@ export async function createSallySurvey(draft: SallySurveyDraft): Promise<string
         timeout: creationActionTimeoutMs,
       });
       await page?.waitForTimeout(750);
-      await saveStorageState(context as BrowserContext);
     });
 
-    return await creationStep('capture survey URL', async () => {
+    const surveyUrl = await creationStep('capture survey URL', async () => {
       const currentUrl = page?.url();
       if (!currentUrl) throw new Error('the published survey page has no address');
       const parsed = new URL(currentUrl);
@@ -348,12 +513,23 @@ export async function createSallySurvey(draft: SallySurveyDraft): Promise<string
       }
       return parsed.href;
     });
+    if (storedSession) {
+      await refreshSallySession(coordinatorEmail, await context.storageState());
+    }
+    return surveyUrl;
   } catch (error) {
     if (error instanceof SallyUiMismatchError) {
       if (page && editorOpened) await discardPartialSurvey(page);
       throw error;
     }
-    if (error instanceof SallyConfigurationError || error instanceof SallyLoginError) throw error;
+    if (
+      error instanceof SallyConfigurationError ||
+      error instanceof SallySessionConfigurationError ||
+      error instanceof SallyConnectionRequiredError ||
+      error instanceof SallyLoginError
+    ) {
+      throw error;
+    }
     throw new SallyCreationError(`Sally survey creation failed: ${errorMessage(error)}`);
   } finally {
     await context?.close().catch(() => undefined);

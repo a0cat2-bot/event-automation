@@ -26,6 +26,31 @@ export type SallySurveyCreationResponse = {
   reason?: string;
 };
 
+export type SallySessionStatus = {
+  connected: boolean;
+  stored_at: string | null;
+  last_used_at: string | null;
+};
+
+export function getSallySessionStatus(signal?: AbortSignal): Promise<SallySessionStatus> {
+  return apiRequest<SallySessionStatus>('/sally/session', { signal });
+}
+
+export function connectSallySession(
+  sallyId: string,
+  password: string,
+): Promise<SallySessionStatus> {
+  return apiRequest<SallySessionStatus>('/sally/session', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sally_id: sallyId, password }),
+  });
+}
+
+export function disconnectSallySession(): Promise<{ connected: false }> {
+  return apiRequest<{ connected: false }>('/sally/session', { method: 'DELETE' });
+}
+
 export function getSallySurveyDraft(
   programId: string,
   kind: SallySurveyKind,
@@ -65,17 +90,20 @@ export function getSallySurveyDescriptionImage(
  * and stage its respondents. Note: despite the "Sally" name suggesting a post-selection
  * satisfaction survey, this currently imports respondents as NEW applicants (matching the
  * written-justification intake flow), staged the same way as a CSV upload — it does not record
- * post-selection satisfaction results. Requires SALLY_EMAIL/SALLY_PASSWORD to be configured.
+ * post-selection satisfaction results. Uses the current coordinator's connected Sally session.
  */
 export function syncSallySurvey(
   programId: string,
   surveyTitle: string,
 ): Promise<SallyImportResponse> {
-  return apiRequest<SallyImportResponse>(`/programs/${encodeURIComponent(programId)}/sally/import`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ survey_title: surveyTitle }),
-  });
+  return apiRequest<SallyImportResponse>(
+    `/programs/${encodeURIComponent(programId)}/sally/import`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ survey_title: surveyTitle }),
+    },
+  );
 }
 
 /**
@@ -85,10 +113,7 @@ export function syncSallySurvey(
  * not depend on Sally's screens being unchanged — the file is already in hand. Both end at the
  * same parser, so the staged result is the same.
  */
-export function uploadSallyExport(
-  programId: string,
-  file: File,
-): Promise<SallyImportResponse> {
+export function uploadSallyExport(programId: string, file: File): Promise<SallyImportResponse> {
   const body = new FormData();
   body.append('file', file);
 

@@ -9,6 +9,7 @@ import { validate } from '../middleware/validate.js';
 import { programParams } from '../schemas/common.js';
 import {
   sallyImportApplicantsBody,
+  sallySessionBody,
   sallySurveyBody,
   sallySurveyDescriptionImageParams,
 } from '../schemas/contracts.js';
@@ -18,6 +19,7 @@ import {
   type SelectionMode,
 } from '../services/applicantStaging.js';
 import {
+  connectSallyAccount,
   createSallySurvey,
   downloadSurveyResults,
   SallyConfigurationError,
@@ -27,6 +29,12 @@ import {
   SallySurveyNotFoundError,
   SallyUiMismatchError,
 } from '../services/sally.js';
+import {
+  deleteSallySession,
+  getSallySessionStatus,
+  SallyConnectionRequiredError,
+  SallySessionConfigurationError,
+} from '../services/sallySession.js';
 import { getEmailProvider } from '../services/email/index.js';
 import {
   parseSallyExport,
@@ -78,8 +86,24 @@ async function accessibleProgram(programId: string) {
 }
 
 function handleSallyError(response: Response, error: unknown) {
+  if (error instanceof SallySessionConfigurationError) {
+    response.status(500).json({ error: error.message });
+    return true;
+  }
   if (error instanceof SallyConfigurationError) {
     response.status(500).json({ error: 'Sally login failed', details: error.message });
+    return true;
+  }
+  if (error instanceof SallyConnectionRequiredError) {
+    response.status(409).json({
+      error: error.expired
+        ? '저장된 Sally 로그인이 만료되었습니다. Sally 계정을 다시 연결해주세요.'
+        : 'Sally 계정 연결이 필요합니다. Sally 아이디와 비밀번호로 연결한 뒤 다시 시도하세요.',
+      code: 'SALLY_CONNECTION_REQUIRED',
+      expired: error.expired,
+      stored_at: error.storedAt ?? null,
+      last_used_at: error.lastUsedAt ?? null,
+    });
     return true;
   }
   if (error instanceof SallyLoginError) {
@@ -106,6 +130,72 @@ function handleSallyError(response: Response, error: unknown) {
 }
 
 export const sallyRouter = Router();
+
+sallyRouter.get(
+  '/sally/session',
+  async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      if (!request.user) {
+        response.status(401).json({ error: 'Sign-in required.' });
+        return;
+      }
+      const status = await getSallySessionStatus(request.user.email);
+      response.json({
+        connected: status.connected,
+        stored_at: status.storedAt,
+        last_used_at: status.lastUsedAt,
+      });
+    } catch (error) {
+      if (!handleSallyError(response, error)) next(error);
+    }
+  },
+);
+
+sallyRouter.post(
+  '/sally/session',
+  validate({ body: sallySessionBody }),
+  async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      if (!request.user) {
+        response.status(401).json({ error: 'Sign-in required.' });
+        return;
+      }
+      const body = sallySessionBody.parse(request.body);
+      let password = body.password;
+      try {
+        await connectSallyAccount(request.user.email, { email: body.sally_id, password });
+      } finally {
+        password = '';
+        body.password = '';
+        if (request.body && typeof request.body === 'object') request.body.password = '';
+      }
+      const status = await getSallySessionStatus(request.user.email);
+      response.status(201).json({
+        connected: status.connected,
+        stored_at: status.storedAt,
+        last_used_at: status.lastUsedAt,
+      });
+    } catch (error) {
+      if (!handleSallyError(response, error)) next(error);
+    }
+  },
+);
+
+sallyRouter.delete(
+  '/sally/session',
+  async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      if (!request.user) {
+        response.status(401).json({ error: 'Sign-in required.' });
+        return;
+      }
+      await deleteSallySession(request.user.email);
+      response.json({ connected: false });
+    } catch (error) {
+      next(error);
+    }
+  },
+);
 
 async function notifySallyUiMismatch(step: string) {
   if (!env.sallyAutomationAdminEmail) return;
@@ -217,10 +307,7 @@ sallyRouter.get(
       );
       response.type('png');
       response.setHeader('Content-Length', String(image.byteLength));
-      response.setHeader(
-        'Content-Disposition',
-        `inline; filename="DESCRIPTION_${programId}.png"`,
-      );
+      response.setHeader('Content-Disposition', `inline; filename="DESCRIPTION_${programId}.png"`);
       response.send(image);
     } catch (error) {
       next(error);
@@ -243,7 +330,7 @@ sallyRouter.post(
       const { kind } = sallySurveyBody.parse(request.body);
       const draft = generateSallySurveyDraft(program, kind);
       try {
-        const surveyUrl = await createSallySurvey(draft);
+        const surveyUrl = await createSallySurvey(request.user!.email, draft);
         if (kind === 'recruitment') {
           await pool.query(
             `UPDATE programs
@@ -283,7 +370,6 @@ sallyRouter.post(
         });
         return;
       }
-
     } catch (error) {
       if (!handleSallyError(response, error)) next(error);
     }
@@ -307,7 +393,7 @@ sallyRouter.post(
       }
 
       const { survey_title: surveyTitle } = sallyImportApplicantsBody.parse(request.body);
-      const exportPath = await downloadSurveyResults(surveyTitle);
+      const exportPath = await downloadSurveyResults(request.user!.email, surveyTitle);
       const records = parseSallyImport(exportPath);
       const upload = await stageSallyImport({
         programId,
