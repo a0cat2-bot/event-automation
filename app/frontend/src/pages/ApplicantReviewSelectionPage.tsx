@@ -12,26 +12,8 @@ import {
 } from '../api/selection';
 import { PageShell } from '../components/PageShell';
 import { ProgramContextBar } from '../components/ProgramContextBar';
+import { ASSESSED_BY_CLASS, ASSESSED_BY_LABEL } from '../utils/assessedBy';
 import { formatDateTime } from '../utils/format';
-
-/**
- * Names the source of a score so a coordinator knows how much it is worth.
- *
- * `agent` is styled as a warning rather than as information: a score supplied through MCP did not
- * pass the fixed prompt, the bias instructions, or the redaction the in-app path enforces, so it
- * deserves a closer read — not because it is wrong, but because nothing here vouches for it.
- */
-const ASSESSED_BY_LABEL: Record<'ai' | 'heuristic' | 'agent', string> = {
-  ai: 'AI 평가',
-  agent: 'Agent 평가',
-  heuristic: '기본 방식',
-};
-
-const ASSESSED_BY_CLASS: Record<'ai' | 'heuristic' | 'agent', string> = {
-  ai: 'status-badge--info',
-  agent: 'status-badge--warning',
-  heuristic: 'status-badge--success',
-};
 
 export function ApplicantReviewSelectionPage() {
   const { programId = '' } = useParams();
