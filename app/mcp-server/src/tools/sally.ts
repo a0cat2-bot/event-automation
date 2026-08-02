@@ -8,7 +8,7 @@ export function registerSallyTools(server: McpServer, backendApiUrl: string): vo
     'event_automation_create_sally_survey',
     {
       description:
-        'Creates the requested Sally survey through server-side browser automation. On success returns the generated draft and survey_url captured from the address bar after publication; recruitment survey URLs are also stored on the program. A Sally UI mismatch returns the draft with created=false so a human can recover manually.',
+        'Creates the requested Sally survey draft through server-side browser automation. On success returns the generated draft and its Sally editor URL; recruitment survey URLs are also stored on the program. A Sally UI mismatch returns the draft with created=false so a human can recover manually.',
       inputSchema: z.object({
         program_id: z.string().uuid().describe('Program UUID.'),
         kind: z.enum(['recruitment', 'satisfaction']).describe('Survey purpose.'),

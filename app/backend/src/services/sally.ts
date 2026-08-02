@@ -395,35 +395,38 @@ function surveyQuestionType(question: SallySurveyQuestion) {
 }
 
 async function fillSingleChoiceRows(
-  openCard: ReturnType<Page['locator']>,
+  page: Page,
+  questionEditorIndex: number,
   choices: Array<string | number>,
 ) {
   if (choices.length === 0) {
     throw new Error('the single-choice question has no choices in its draft');
   }
 
-  const choiceInputs = openCard.getByPlaceholder('보기를 입력해주세요');
+  const editors = page.locator('.ProseMirror');
   for (const [choiceIndex, choice] of choices.entries()) {
     if (choiceIndex >= 2) {
-      await openCard.getByText('⊕', { exact: true }).last().click({
+      await page.locator('.add-circle-icon').click({
         timeout: creationActionTimeoutMs,
       });
     }
 
-    const choiceInput = choiceInputs.nth(choiceIndex);
+    const choiceEditor = editors.nth(questionEditorIndex + choiceIndex + 1);
     try {
-      await choiceInput.waitFor({ state: 'visible', timeout: creationActionTimeoutMs });
+      await choiceEditor.waitFor({ state: 'visible', timeout: creationActionTimeoutMs });
     } catch {
       throw new Error(
-        `expected choice row ${choiceIndex + 1} of ${choices.length} did not appear in the open question card`,
+        `expected choice row ${choiceIndex + 1} of ${choices.length} did not appear after the focused question editor`,
       );
     }
-    await choiceInput.fill(String(choice), { timeout: creationActionTimeoutMs });
+    await choiceEditor.pressSequentially(String(choice), {
+      timeout: creationActionTimeoutMs,
+    });
   }
 }
 
 async function addSurveyQuestion(page: Page, question: SallySurveyQuestion) {
-  await page.getByText(surveyQuestionType(question), { exact: true }).click({
+  await page.getByText(surveyQuestionType(question), { exact: true }).first().click({
     timeout: creationActionTimeoutMs,
   });
 
@@ -431,22 +434,34 @@ async function addSurveyQuestion(page: Page, question: SallySurveyQuestion) {
   await questionEditor.pressSequentially(question.text, {
     timeout: creationActionTimeoutMs,
   });
-  const openCard = page
-    .locator('div')
-    .filter({ has: questionEditor })
-    .filter({ has: page.getByText('저장', { exact: true }) })
-    .last();
-
-  if (question.type === 'single_choice') {
-    await fillSingleChoiceRows(openCard, question.choices ?? []);
+  const questionEditorIndex = await page
+    .locator('.ProseMirror')
+    .evaluateAll((editors) =>
+      editors.findIndex((editor) => editor.classList.contains('ProseMirror-focused')),
+    );
+  if (questionEditorIndex < 0) {
+    throw new Error('the focused question editor is missing from the editor list');
   }
 
-  await openCard.getByText('필수', { exact: true }).click({
+  if (question.type === 'single_choice') {
+    await fillSingleChoiceRows(page, questionEditorIndex, question.choices ?? []);
+  }
+
+  await page.getByText('필수', { exact: true }).click({
     timeout: creationActionTimeoutMs,
   });
-  await openCard.getByText('저장', { exact: true }).click({
+  const saveButton = page.getByText('저장', { exact: true });
+  await saveButton.click({
     timeout: creationActionTimeoutMs,
   });
+  try {
+    await saveButton.waitFor({
+      state: 'hidden',
+      timeout: creationActionTimeoutMs,
+    });
+  } catch {
+    throw new Error('the question card did not close after save');
+  }
 }
 
 /**
@@ -479,9 +494,12 @@ export async function createSallySurveyInEditor(
       timeout: creationActionTimeoutMs,
     });
     if (draft.team_name) {
-      await page.getByPlaceholder('팀명을 입력해주세요').fill(draft.team_name, {
-        timeout: creationActionTimeoutMs,
-      });
+      const teamField = page.getByPlaceholder('팀명을 입력해주세요');
+      await teamField.fill(draft.team_name, { timeout: creationActionTimeoutMs });
+      // Measured 2026-08-02: this field commits on blur, not on input. Filled and left
+      // focused, the value renders but is gone after a reload. The title above survives
+      // only because filling this field takes focus off it.
+      await teamField.press('Tab', { timeout: creationActionTimeoutMs });
     }
     if (draft.description) {
       const descriptionEditor = page.locator('.ProseMirror').first();
