@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { redactPersonalData } from './redaction.js';
+import { redactPersonalData, withApplicantHandles } from './redaction.js';
 
 /**
  * These tests are the evidence behind the claim that the app sends no contact details or employee
@@ -58,5 +58,49 @@ test('several kinds of personal data in one sentence all go', () => {
   assert.equal(
     redactPersonalData('안녕하세요 김철수입니다. 사번 87654321, 010-2222-3333, kim@samsung.com 입니다.'),
     '안녕하세요 김철수입니다. [사번], [전화번호], [이메일] 입니다.',
+  );
+});
+
+const applicant = {
+  id: 'a1',
+  program_id: 'p1',
+  email: 'kim@samsung.com',
+  name: '김철수',
+  department: 'AX센터 EHS그룹',
+  score: 80,
+  justification: '평소 안전관리에 관심이 많습니다.',
+};
+
+test('identity fields are absent, not blanked, once handles are applied', () => {
+  const [row] = withApplicantHandles([applicant]);
+  assert.ok(row);
+
+  assert.equal('email' in row, false);
+  assert.equal('name' in row, false);
+  assert.equal('department' in row, false);
+  assert.equal(JSON.stringify(row).includes('김철수'), false);
+  assert.equal(JSON.stringify(row).includes('samsung.com'), false);
+});
+
+test('what an agent needs to act on and explain itself survives', () => {
+  const [row] = withApplicantHandles([applicant]);
+  assert.ok(row);
+
+  assert.equal(row.id, 'a1');
+  assert.equal(row.score, 80);
+  assert.equal(row.justification, '평소 안전관리에 관심이 많습니다.');
+  assert.equal(row.handle, '신청자 1');
+});
+
+test('handles follow the order a coordinator sees, so they can be matched back', () => {
+  const rows = withApplicantHandles([applicant, { ...applicant, id: 'a2' }, { ...applicant, id: 'a3' }]);
+
+  assert.deepEqual(
+    rows.map(({ id, handle }) => [id, handle]),
+    [
+      ['a1', '신청자 1'],
+      ['a2', '신청자 2'],
+      ['a3', '신청자 3'],
+    ],
   );
 });

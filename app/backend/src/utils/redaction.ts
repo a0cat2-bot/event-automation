@@ -44,3 +44,31 @@ export function redactPersonalData(text: string): string {
     .replace(LABELLED_EMPLOYEE_NUMBER, '[사번]')
     .replace(LONG_DIGIT_RUN, '[숫자]');
 }
+
+interface IdentifiedApplicant {
+  email: string;
+  name: string | null;
+  department: string | null;
+}
+
+/**
+ * Replaces applicant identity with a positional handle, for the MCP surface.
+ *
+ * The allowance above — that names may stay — covers the in-app provider, which is the company's
+ * own gateway. It does not extend to an outside agent reading these rows through MCP, so this
+ * boundary is stricter: identity is dropped rather than obscured, because a field that is never
+ * sent cannot be reconstructed.
+ *
+ * Nothing is lost by it. Every tool that acts on an applicant takes the id, so an agent can score
+ * and select without knowing who anyone is; the handle exists only so its explanation reads as
+ * "신청자 3" rather than a UUID, and stays matchable against the ordering a coordinator sees in
+ * the app.
+ */
+export function withApplicantHandles<T extends IdentifiedApplicant>(
+  applicants: T[],
+): Array<Omit<T, 'email' | 'name' | 'department'> & { handle: string }> {
+  return applicants.map(({ email: _email, name: _name, department: _department, ...rest }, index) => ({
+    ...rest,
+    handle: `신청자 ${index + 1}`,
+  }));
+}

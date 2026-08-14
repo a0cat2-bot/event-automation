@@ -50,7 +50,7 @@ function requestRecorder(paths: string[]): typeof backendRequest {
 const programId = '11111111-1111-4111-8111-111111111111';
 const applicantId = '22222222-2222-4222-8222-222222222222';
 
-test('list applicants requests free-text redaction from the backend', async () => {
+test('list applicants asks the backend to withhold identity as well as free text', async () => {
   const paths: string[] = [];
   const server = new McpServer({ name: 'test', version: '0.0.0' });
   registerApplicantTools(server, 'http://backend.test/api/v1', requestRecorder(paths));
@@ -59,7 +59,9 @@ test('list applicants requests free-text redaction from the backend', async () =
     program_id: programId,
   });
 
-  assert.deepEqual(paths, [`/programs/${programId}/applicants?redact_free_text=true`]);
+  assert.deepEqual(paths, [
+    `/programs/${programId}/applicants?redact_free_text=true&redact_identity=true`,
+  ]);
 });
 
 test('list survey responses uses the backend endpoint that redacts responses', async () => {

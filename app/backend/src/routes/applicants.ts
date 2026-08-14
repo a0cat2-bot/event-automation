@@ -16,7 +16,7 @@ import {
   stagedUploadTtlMs,
 } from '../services/applicantStaging.js';
 import { getActorName } from '../utils/actor.js';
-import { redactPersonalData } from '../utils/redaction.js';
+import { redactPersonalData, withApplicantHandles } from '../utils/redaction.js';
 
 type SelectionMode = 'first_come_first_served' | 'score' | 'written_justification';
 type IssueType = 'error' | 'warning' | 'duplicate';
@@ -748,6 +748,10 @@ const applicantListQuery = z.object({
     .enum(['true', 'false'])
     .optional()
     .transform((value) => value === 'true'),
+  redact_identity: z
+    .enum(['true', 'false'])
+    .optional()
+    .transform((value) => value === 'true'),
 });
 
 applicantsRouter.get(
@@ -762,7 +766,8 @@ applicantsRouter.get(
         return;
       }
 
-      const { redact_free_text: redactFreeText } = applicantListQuery.parse(request.query);
+      const { redact_free_text: redactFreeText, redact_identity: redactIdentity } =
+        applicantListQuery.parse(request.query);
       const result = await pool.query<ApplicantResultRow>(
         `SELECT id, program_id, email, name, department, score,
                 justification, applied_at, created_at, updated_at
@@ -772,12 +777,13 @@ applicantsRouter.get(
         [programId],
       );
 
-      const applicants = redactFreeText
+      const withFreeText = redactFreeText
         ? result.rows.map((row) => ({
             ...row,
             justification: row.justification ? redactPersonalData(row.justification) : row.justification,
           }))
         : result.rows;
+      const applicants = redactIdentity ? withApplicantHandles(withFreeText) : withFreeText;
       response.json({ applicants });
     } catch (error) {
       next(error);

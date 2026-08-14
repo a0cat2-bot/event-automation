@@ -102,7 +102,7 @@ export function registerApplicantTools(
     'event_automation_list_applicants',
     {
       description:
-        'Lists applicants for a program. Requires program_id (UUID). Returns { applicants } ordered by application time, with IDs, contact fields, score, justification, and timestamps. Justification text is redacted before it leaves the app: phone numbers, email addresses and employee numbers an applicant wrote about themselves are replaced with placeholders, because none of that is needed to assess a motivation statement.',
+        'Lists applicants for a program. Requires program_id (UUID). Returns { applicants } ordered by application time, each with its id, a display handle, score, justification and timestamps. No personal data leaves the app: names, email addresses and departments are never sent, and phone numbers, email addresses and employee numbers an applicant wrote inside their own justification are replaced with placeholders. Refer to applicants by handle when explaining a decision, and by id when calling another tool.',
       inputSchema: z.object({ program_id: z.string().uuid().describe('Program UUID.') }),
       annotations: {
         readOnlyHint: true,
@@ -115,7 +115,7 @@ export function registerApplicantTools(
       toolRequest('List applicants', () =>
         request(
           backendApiUrl,
-          `/programs/${encodeURIComponent(program_id)}/applicants?redact_free_text=true`,
+          `/programs/${encodeURIComponent(program_id)}/applicants?redact_free_text=true&redact_identity=true`,
         ),
       ),
   );
