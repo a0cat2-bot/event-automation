@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 import { backendRequest, toolRequest } from '../apiClient.js';
+import { withPersonHandles } from '../identity.js';
 
 export function registerGiftTools(server: McpServer, backendApiUrl: string): void {
   server.registerTool(
@@ -91,7 +92,7 @@ export function registerGiftTools(server: McpServer, backendApiUrl: string): voi
     'event_automation_list_gift_recipients',
     {
       description:
-        'Lists a program’s gift recipients. Requires program_id (UUID). Returns { gift_recipients } with participant identity, selection rank/reason/time, gift delivery state, and applicant name/email.',
+        'Lists a program’s gift recipients. Requires program_id (UUID). Returns { gift_recipients }, each with its ids, a display handle, selection rank/reason/time, the gift item name, and gift delivery state. Recipient names and email addresses are not returned; act on a recipient by id and refer to one by handle.',
       inputSchema: z.object({ program_id: z.string().uuid().describe('Program UUID.') }),
       annotations: {
         readOnlyHint: true,
@@ -101,8 +102,12 @@ export function registerGiftTools(server: McpServer, backendApiUrl: string): voi
       },
     },
     ({ program_id }) =>
-      toolRequest('List gift recipients', () =>
-        backendRequest(backendApiUrl, `/programs/${encodeURIComponent(program_id)}/gifts`),
+      toolRequest('List gift recipients', async () =>
+        withPersonHandles(
+          await backendRequest(backendApiUrl, `/programs/${encodeURIComponent(program_id)}/gifts`),
+          'gift_recipients',
+          '수령자',
+        ),
       ),
   );
 }

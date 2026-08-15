@@ -37,7 +37,6 @@ export interface LetterCopyDraft {
 const ALLOWED_MERGE_FIELDS = [
   'applicant_name',
   'applicant_email',
-  'department',
   'program_name',
   'program_date',
   'program_location',

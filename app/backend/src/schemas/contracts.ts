@@ -130,7 +130,6 @@ export const letterStandardContentBody = z.object({
 export const letterPlaceholderKey = z.enum([
   'applicant_name',
   'applicant_email',
-  'department',
   'program_name',
   'program_date',
   'program_location',

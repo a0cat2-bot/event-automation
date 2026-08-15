@@ -77,7 +77,6 @@ interface ApplicantResultRow {
   program_id: string;
   email: string;
   name: string | null;
-  department: string | null;
   score: number | null;
   justification: string | null;
   applied_at: Date;
@@ -108,7 +107,6 @@ const applicantParams = programParams.extend({ applicant_id: z.string().uuid() }
 const applicantBody = z.object({
   name: z.string().trim().min(1).max(255),
   email: z.string().trim().min(1).max(255).regex(basicEmailPattern),
-  department: z.string().trim().min(1).max(100),
   applied_at: z
     .string()
     .trim()
@@ -642,7 +640,6 @@ applicantsRouter.post(
             programId,
             row.email,
             row.name,
-            null,
             row.score,
             row.justification,
             row.appliedAt,
@@ -653,8 +650,8 @@ applicantsRouter.post(
           if (body.conflict_resolution === 'skip_duplicates') {
             const result = await client.query(
               `INSERT INTO applicants
-                 (id, program_id, email, name, department, score, justification, applied_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                 (id, program_id, email, name, score, justification, applied_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
                ON CONFLICT (program_id, LOWER(email)) DO NOTHING
                RETURNING id`,
               values,
@@ -664,12 +661,11 @@ applicantsRouter.post(
           } else {
             await client.query(
               `INSERT INTO applicants
-                 (id, program_id, email, name, department, score, justification, applied_at)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+                 (id, program_id, email, name, score, justification, applied_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
                ON CONFLICT (program_id, LOWER(email)) DO UPDATE SET
                  email = EXCLUDED.email,
                  name = EXCLUDED.name,
-                 department = EXCLUDED.department,
                  score = EXCLUDED.score,
                  justification = EXCLUDED.justification,
                  applied_at = EXCLUDED.applied_at,
@@ -761,7 +757,7 @@ applicantsRouter.get(
       const { redact_free_text: redactFreeText, redact_identity: redactIdentity } =
         applicantListQuery.parse(request.query);
       const result = await pool.query<ApplicantResultRow>(
-        `SELECT id, program_id, email, name, department, score,
+        `SELECT id, program_id, email, name, score,
                 justification, applied_at, created_at, updated_at
          FROM applicants
          WHERE program_id = $1
@@ -816,16 +812,15 @@ applicantsRouter.post(
         const applicant = parsed.data;
         const result = await pool.query<ApplicantResultRow>(
           `INSERT INTO applicants
-             (id, program_id, email, name, department, score, justification, applied_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           RETURNING id, program_id, email, name, department, score,
+             (id, program_id, email, name, score, justification, applied_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING id, program_id, email, name, score,
                      justification, applied_at, created_at, updated_at`,
           [
             randomUUID(),
             programId,
             applicant.email,
             applicant.name,
-            applicant.department,
             applicant.score ?? null,
             applicant.justification ?? null,
             new Date(applicant.applied_at).toISOString(),
@@ -883,21 +878,19 @@ applicantsRouter.put(
           `UPDATE applicants
            SET email = COALESCE($3, email),
                name = COALESCE($4, name),
-               department = COALESCE($5, department),
-               score = COALESCE($6::int, score),
-               justification = COALESCE($7, justification),
-               applied_at = COALESCE($8::timestamp, applied_at),
+               score = COALESCE($5::int, score),
+               justification = COALESCE($6, justification),
+               applied_at = COALESCE($7::timestamp, applied_at),
                updated_at = NOW()
            WHERE id = $1
              AND program_id = $2
-           RETURNING id, program_id, email, name, department, score,
+           RETURNING id, program_id, email, name, score,
                      justification, applied_at, created_at, updated_at`,
           [
             applicantId,
             programId,
             applicant.email ?? null,
             applicant.name ?? null,
-            applicant.department ?? null,
             applicant.score ?? null,
             applicant.justification ?? null,
             applicant.applied_at ? new Date(applicant.applied_at).toISOString() : null,

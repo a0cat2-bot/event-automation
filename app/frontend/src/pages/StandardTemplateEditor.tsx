@@ -25,7 +25,6 @@ type StandardMergeFieldKey = Exclude<LetterFieldKey, 'static'>;
 const MERGE_FIELD_LABELS: Record<StandardMergeFieldKey, string> = {
   applicant_name: '신청자 이름',
   applicant_email: '신청자 이메일',
-  department: '소속 부서',
   program_name: '프로그램명',
   program_date: '날짜',
   program_location: '장소',

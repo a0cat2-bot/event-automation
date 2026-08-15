@@ -18,7 +18,6 @@ export type PreviewRow = {
   row_number: number;
   name: string;
   email: string;
-  department: string;
   score: number | null;
   justification: string | null;
   applied_at: string;
@@ -57,7 +56,6 @@ export type Applicant = {
   program_id: string;
   email: string | null;
   name: string | null;
-  department: string | null;
   score: number | null;
   justification: string | null;
   applied_at: string;
@@ -71,7 +69,6 @@ type ApplicantResponse = { applicant: Applicant };
 export type ApplicantInput = {
   name: string;
   email: string;
-  department: string;
   applied_at: string;
   score?: number;
   justification?: string;

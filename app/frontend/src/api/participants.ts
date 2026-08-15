@@ -18,7 +18,6 @@ export type Participant = {
   updated_at: string;
   name: string | null;
   email: string | null;
-  department: string | null;
 };
 
 export type NotificationHistoryEntry = {

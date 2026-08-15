@@ -66,7 +66,6 @@ const applicant = {
   program_id: 'p1',
   email: 'kim@samsung.com',
   name: '김철수',
-  department: 'AX센터 EHS그룹',
   score: 80,
   justification: '평소 안전관리에 관심이 많습니다.',
 };
@@ -77,7 +76,6 @@ test('identity fields are absent, not blanked, once handles are applied', () => 
 
   assert.equal('email' in row, false);
   assert.equal('name' in row, false);
-  assert.equal('department' in row, false);
   assert.equal(JSON.stringify(row).includes('김철수'), false);
   assert.equal(JSON.stringify(row).includes('samsung.com'), false);
 });

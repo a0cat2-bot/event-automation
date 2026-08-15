@@ -3,6 +3,23 @@ import { z } from 'zod';
 
 import { backendRequest, toolRequest } from '../apiClient.js';
 
+/**
+ * Replaces the preview's recipient list with its size.
+ *
+ * What a coordinator reviews in a preview is the letter — whether it says the right thing and
+ * looks the way the programme intends — and that is returned untouched. Who it goes to is settled
+ * in the app, where the saved list lives, so the addresses have no reviewer here and only carry
+ * personal data out to whichever assistant is holding this conversation.
+ */
+export function withoutRecipientAddresses(preview: unknown): unknown {
+  if (typeof preview !== 'object' || preview === null || !('recipients' in preview)) return preview;
+  const { recipients, ...rest } = preview as { recipients: unknown };
+  return {
+    ...rest,
+    recipient_count: Array.isArray(recipients) ? recipients.length : 0,
+  };
+}
+
 export function registerLetterTools(server: McpServer, backendApiUrl: string): void {
   server.registerTool(
     'event_automation_prepare_recruitment_notice',
@@ -34,7 +51,7 @@ export function registerLetterTools(server: McpServer, backendApiUrl: string): v
     'event_automation_preview_recruitment_notice',
     {
       description:
-        'Dry-runs a recruitment notice without writing or sending anything. Returns exactly which saved recipients would receive it, the subject and email body, the fully rendered letter HTML, and the Sally CTA URL/text. Use this preview before any confirmed send.',
+        'Dry-runs a recruitment notice without writing or sending anything. Returns the subject, the email body, the fully rendered letter HTML, the Sally CTA URL/text, and recipient_count — how many saved recipients would receive it. Their addresses are not returned; the list is reviewed in the app. Use this preview before any confirmed send.',
       inputSchema: z.object({
         program_id: z.string().uuid().describe('Program UUID.'),
         template_id: z.string().uuid().describe('Recruitment letter-template UUID.'),
@@ -47,11 +64,13 @@ export function registerLetterTools(server: McpServer, backendApiUrl: string): v
       },
     },
     ({ program_id, template_id }) =>
-      toolRequest('Preview recruitment notice', () =>
-        backendRequest(
-          backendApiUrl,
-          `/programs/${encodeURIComponent(program_id)}/recruitment-notice/preview`,
-          { method: 'POST', body: { template_id } },
+      toolRequest('Preview recruitment notice', async () =>
+        withoutRecipientAddresses(
+          await backendRequest(
+            backendApiUrl,
+            `/programs/${encodeURIComponent(program_id)}/recruitment-notice/preview`,
+            { method: 'POST', body: { template_id } },
+          ),
         ),
       ),
   );

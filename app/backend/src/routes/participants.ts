@@ -30,7 +30,6 @@ interface ParticipantListRow {
   updated_at: Date;
   name: string | null;
   email: string | null;
-  department: string | null;
 }
 
 interface ParticipantNotificationRow {
@@ -123,7 +122,7 @@ participantsRouter.get(
                 pt.notification_letter_id, pt.survey_id, pt.survey_status,
                 pt.is_gift_eligible, pt.gift_status, pt.gift_selected_at,
                 pt.created_at, pt.updated_at,
-                a.name, a.email, a.department
+                a.name, a.email
          FROM participants pt
          JOIN applicants a ON a.id = pt.applicant_id AND a.program_id = pt.program_id
          WHERE pt.program_id = $1

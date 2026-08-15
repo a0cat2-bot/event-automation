@@ -38,7 +38,6 @@ const STATUS_LABELS: Record<PreviewResponse['rows'][number]['status'], string> =
 type ApplicantFormState = {
   name: string;
   email: string;
-  department: string;
   applied_at: string;
   score: string;
   justification: string;
@@ -53,7 +52,6 @@ function emptyApplicantForm(): ApplicantFormState {
   return {
     name: '',
     email: '',
-    department: '',
     applied_at: localDateTimeValue(new Date()),
     score: '',
     justification: '',
@@ -64,7 +62,6 @@ function applicantForm(applicant: Applicant): ApplicantFormState {
   return {
     name: applicant.name ?? '',
     email: applicant.email ?? '',
-    department: applicant.department ?? '',
     applied_at: localDateTimeValue(new Date(applicant.applied_at)),
     score: applicant.score == null ? '' : String(applicant.score),
     justification: applicant.justification ?? '',
@@ -78,7 +75,6 @@ function applicantInput(
   return {
     name: values.name.trim(),
     email: values.email.trim(),
-    department: values.department.trim(),
     applied_at: new Date(values.applied_at).toISOString(),
     ...(selectionMode === 'score' ? { score: Number(values.score) } : {}),
     ...(selectionMode === 'written_justification'
@@ -115,15 +111,6 @@ function ApplicantFields({
           maxLength={255}
           value={values.email}
           onChange={(event) => onChange('email', event.target.value)}
-        />
-      </label>
-      <label>
-        부서
-        <input
-          required
-          maxLength={100}
-          value={values.department}
-          onChange={(event) => onChange('department', event.target.value)}
         />
       </label>
       <label>
@@ -366,7 +353,7 @@ export function ApplicantUploadPage() {
             <h2>CSV 파일 선택</h2>
             {program ? (
               <p className="field-hint">
-                필수 열: name, email, department
+                필수 열: name, email
                 {program.selection_mode === 'score' ? ', score' : null}
                 {program.selection_mode === 'written_justification' ? ', justification' : null}.
                 applied_at은 선택이며, 비우면 파일 순서대로 접수됩니다.
@@ -462,7 +449,6 @@ export function ApplicantUploadPage() {
                   <th>#</th>
                   <th>이름</th>
                   <th>이메일</th>
-                  <th>부서</th>
                   <th>상태</th>
                 </tr>
               </thead>
@@ -472,7 +458,6 @@ export function ApplicantUploadPage() {
                     <td>{row.row_number}</td>
                     <td>{row.name}</td>
                     <td>{row.email}</td>
-                    <td>{row.department}</td>
                     <td>{STATUS_LABELS[row.status]}</td>
                   </tr>
                 ))}
@@ -550,7 +535,6 @@ export function ApplicantUploadPage() {
                 <tr>
                   <th>이름</th>
                   <th>이메일</th>
-                  <th>부서</th>
                   <th>신청 시각</th>
                   {program.selection_mode === 'score' ? <th>점수</th> : null}
                   {program.selection_mode === 'written_justification' ? <th>신청 사유</th> : null}
@@ -563,7 +547,6 @@ export function ApplicantUploadPage() {
                     <tr>
                       <td>{applicant.name ?? '—'}</td>
                       <td>{applicant.email ?? '—'}</td>
-                      <td>{applicant.department ?? '—'}</td>
                       <td>{formatDateTime(applicant.applied_at)}</td>
                       {program.selection_mode === 'score' ? (
                         <td>{applicant.score ?? '—'}</td>
@@ -585,7 +568,7 @@ export function ApplicantUploadPage() {
                       <tr>
                         <td
                           colSpan={
-                            program.selection_mode === 'first_come_first_served' ? 6 : 7
+                            program.selection_mode === 'first_come_first_served' ? 4 : 5
                           }
                         >
                           <form className="stack-form" onSubmit={handleUpdate}>

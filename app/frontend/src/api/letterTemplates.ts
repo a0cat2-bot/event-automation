@@ -3,7 +3,6 @@ import { apiRequest } from './client';
 export const LETTER_FIELD_KEYS = [
   'applicant_name',
   'applicant_email',
-  'department',
   'program_name',
   'program_date',
   'program_location',

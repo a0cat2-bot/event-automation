@@ -2,13 +2,14 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
 import { backendRequest, toolRequest } from '../apiClient.js';
+import { withPersonHandles } from '../identity.js';
 
 export function registerParticipantTools(server: McpServer, backendApiUrl: string): void {
   server.registerTool(
     'event_automation_list_participants',
     {
       description:
-        'Lists selected participants for a program. Requires program_id (UUID). Returns { participants } ordered by selection rank, including applicant contact data, selection reason, notification fields, survey status, and gift eligibility/status.',
+        'Lists selected participants for a program. Requires program_id (UUID). Returns { participants } ordered by selection rank, each with its id, a display handle, selection reason, notification fields, survey status, and gift eligibility/status. Names and email addresses are not returned; act on a participant by id and refer to one by handle.',
       inputSchema: z.object({ program_id: z.string().uuid().describe('Program UUID.') }),
       annotations: {
         readOnlyHint: true,
@@ -18,10 +19,14 @@ export function registerParticipantTools(server: McpServer, backendApiUrl: strin
       },
     },
     ({ program_id }) =>
-      toolRequest('List participants', () =>
-        backendRequest(
-          backendApiUrl,
-          `/programs/${encodeURIComponent(program_id)}/participants`,
+      toolRequest('List participants', async () =>
+        withPersonHandles(
+          await backendRequest(
+            backendApiUrl,
+            `/programs/${encodeURIComponent(program_id)}/participants`,
+          ),
+          'participants',
+          '참가자',
         ),
       ),
   );

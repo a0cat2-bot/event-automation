@@ -28,7 +28,6 @@ import { StandardTemplateEditor } from './StandardTemplateEditor';
 const FIELD_LABELS: Record<LetterFieldKey, string> = {
   applicant_name: '신청자 이름',
   applicant_email: '신청자 이메일',
-  department: '소속 부서',
   program_name: '프로그램명',
   program_date: '날짜',
   program_location: '장소',

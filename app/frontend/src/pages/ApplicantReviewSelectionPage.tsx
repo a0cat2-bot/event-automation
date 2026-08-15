@@ -319,7 +319,6 @@ export function ApplicantReviewSelectionPage() {
                     <th>선정</th>
                     <th>이름</th>
                     <th>이메일</th>
-                    <th>부서</th>
                     <th>신청일시</th>
                     <th>품질 점수</th>
                     <th>평가 근거</th>
@@ -344,7 +343,6 @@ export function ApplicantReviewSelectionPage() {
                         </td>
                         <td>{candidate.name ?? applicant?.name}</td>
                         <td>{candidate.email ?? applicant?.email}</td>
-                        <td>{applicant?.department}</td>
                         <td>{formatDateTime(candidate.applied_at)}</td>
                         <td>
                           <div className="score-cell">
@@ -430,7 +428,6 @@ export function ApplicantReviewSelectionPage() {
                   <th>순위</th>
                   <th>이름</th>
                   <th>이메일</th>
-                  <th>부서</th>
                   <th>신청일시</th>
                   <th>선정 사유</th>
                   <th></th>
@@ -444,7 +441,6 @@ export function ApplicantReviewSelectionPage() {
                       <td>{candidate.selection_rank}</td>
                       <td>{applicant?.name}</td>
                       <td>{applicant?.email}</td>
-                      <td>{applicant?.department}</td>
                       <td>{applicant ? formatDateTime(applicant.applied_at) : null}</td>
                       <td>{candidate.selection_reason}</td>
                       <td>
@@ -478,7 +474,6 @@ export function ApplicantReviewSelectionPage() {
                     <tr>
                       <th>이름</th>
                       <th>이메일</th>
-                      <th>부서</th>
                       <th></th>
                     </tr>
                   </thead>
@@ -489,7 +484,6 @@ export function ApplicantReviewSelectionPage() {
                         <tr key={applicantId}>
                           <td>{applicant?.name}</td>
                           <td>{applicant?.email}</td>
-                          <td>{applicant?.department}</td>
                           <td>
                             <button
                               className="button button--quiet"
@@ -556,7 +550,6 @@ export function ApplicantReviewSelectionPage() {
                   <th>순위</th>
                   <th>이름</th>
                   <th>이메일</th>
-                  <th>부서</th>
                   <th>선정 사유</th>
                 </tr>
               </thead>
@@ -566,7 +559,6 @@ export function ApplicantReviewSelectionPage() {
                     <td>{participant.selection_rank}</td>
                     <td>{participant.name}</td>
                     <td>{participant.email}</td>
-                    <td>{participant.department}</td>
                     <td>{participant.selection_reason}</td>
                   </tr>
                 ))}

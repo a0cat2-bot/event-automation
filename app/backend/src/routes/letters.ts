@@ -77,7 +77,6 @@ interface ApplicantRow {
   id: string;
   name: string | null;
   email: string | null;
-  department: string | null;
 }
 
 interface CoordinatorSettingsRow {
@@ -149,7 +148,6 @@ function buildPlaceholderValues(
   return {
     applicant_name: applicant.name,
     applicant_email: applicant.email,
-    department: applicant.department,
     program_name: context.program_name,
     program_date: programDateValue(context.intake_data),
     program_location: intakeValue(context.intake_data, 'program_location', 'location'),
@@ -554,7 +552,7 @@ async function generateStandardLettersForApplicants(params: {
     let uncommittedFilePath: string | null = null;
     try {
       const applicantResult = await pool.query<ApplicantRow>(
-        `SELECT id, name, email, department
+        `SELECT id, name, email
          FROM applicants
          WHERE id = $1 AND program_id = $2
          LIMIT 1`,
@@ -822,7 +820,7 @@ export async function generateLettersForApplicants(params: {
     let uncommittedFilePath: string | null = null;
     try {
       const applicantResult = await pool.query<ApplicantRow>(
-        `SELECT id, name, email, department
+        `SELECT id, name, email
          FROM applicants
          WHERE id = $1 AND program_id = $2
          LIMIT 1`,
@@ -1099,7 +1097,7 @@ async function prepareRecruitmentNoticeMessage(
 
   const variables = buildPlaceholderValues(
     context,
-    { id: '', name: null, email: null, department: null },
+    { id: '', name: null, email: null },
     orgSettings.default_coordinator_name,
     orgSettings.default_coordinator_contact,
   );

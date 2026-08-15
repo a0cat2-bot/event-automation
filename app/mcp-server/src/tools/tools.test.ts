@@ -13,6 +13,8 @@ import { registerProgramTools } from './programs.js';
 import { registerReportTools } from './reports.js';
 import { registerSallyTools } from './sally.js';
 import { registerSelectionTools } from './selection.js';
+import { withPersonHandles } from '../identity.js';
+import { withoutRecipientAddresses } from './letters.js';
 
 interface RegisteredTool {
   description?: string;
@@ -144,4 +146,48 @@ test('all tools have descriptions, annotations, and correct read-only hints', ()
       `${name} has the wrong readOnlyHint`,
     );
   }
+});
+
+test('a person list keeps what an agent acts on and drops who they are', () => {
+  const result = withPersonHandles(
+    {
+      participants: [
+        { id: 'p1', name: '김철수', email: 'a@samsung.com', survey_status: 'completed' },
+        { id: 'p2', name: '이영희', email: 'b@samsung.com', survey_status: 'sent' },
+      ],
+    },
+    'participants',
+    '참가자',
+  ) as { participants: Array<Record<string, unknown>> };
+
+  assert.deepEqual(result.participants, [
+    { id: 'p1', survey_status: 'completed', handle: '참가자 1' },
+    { id: 'p2', survey_status: 'sent', handle: '참가자 2' },
+  ]);
+  assert.equal(JSON.stringify(result).includes('samsung.com'), false);
+  assert.equal(JSON.stringify(result).includes('김철수'), false);
+});
+
+test('a gift item name is not mistaken for a person name', () => {
+  const result = withPersonHandles(
+    { gift_recipients: [{ id: 'g1', name: '홍길동', gift_item_name: '스타벅스 기프티콘' }] },
+    'gift_recipients',
+    '수령자',
+  ) as { gift_recipients: Array<Record<string, unknown>> };
+
+  assert.equal(result.gift_recipients[0]?.gift_item_name, '스타벅스 기프티콘');
+  assert.equal('name' in (result.gift_recipients[0] ?? {}), false);
+});
+
+test('the letter preview keeps the letter and drops the address list', () => {
+  const result = withoutRecipientAddresses({
+    recipients: ['a@samsung.com', 'b@samsung.com'],
+    subject: '참여자 모집',
+    letter_html: '<html>운동강좌</html>',
+  }) as Record<string, unknown>;
+
+  assert.equal(result.recipient_count, 2);
+  assert.equal(result.letter_html, '<html>운동강좌</html>');
+  assert.equal(result.subject, '참여자 모집');
+  assert.equal('recipients' in result, false);
 });

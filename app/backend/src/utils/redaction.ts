@@ -1,7 +1,7 @@
 /**
  * Removes identifying numbers from employee-written free text before it is sent to an LLM.
  *
- * The app never puts names, emails, or departments into a prompt as structured fields — the model
+ * The app never puts names or emails into a prompt as structured fields — the model
  * only ever receives an opaque id and the text itself. But a justification or a survey comment is
  * written by a person, and people include contact details and employee numbers when introducing
  * themselves. No schema can prevent that, so it is stripped here.
@@ -48,7 +48,6 @@ export function redactPersonalData(text: string): string {
 interface IdentifiedApplicant {
   email: string;
   name: string | null;
-  department: string | null;
 }
 
 /**
@@ -66,8 +65,8 @@ interface IdentifiedApplicant {
  */
 export function withApplicantHandles<T extends IdentifiedApplicant>(
   applicants: T[],
-): Array<Omit<T, 'email' | 'name' | 'department'> & { handle: string }> {
-  return applicants.map(({ email: _email, name: _name, department: _department, ...rest }, index) => ({
+): Array<Omit<T, 'email' | 'name'> & { handle: string }> {
+  return applicants.map(({ email: _email, name: _name, ...rest }, index) => ({
     ...rest,
     handle: `신청자 ${index + 1}`,
   }));

@@ -47,7 +47,6 @@ interface ParticipantReportRow {
   rank: number | null;
   name: string | null;
   email: string | null;
-  department: string | null;
   notification_status: 'pending' | 'sent' | 'bounced' | 'failed';
   survey_status: 'not_sent' | 'sent' | 'in_progress' | 'completed';
 }
@@ -178,13 +177,13 @@ function buildMarkdownReport(content: ReportContent): string {
   if (content.sections.participants) {
     const rows = content.participants.map(
       (participant) =>
-        `| ${escapeMarkdownCell(participant.rank)} | ${escapeMarkdownCell(participant.name)} | ${escapeMarkdownCell(participant.email)} | ${escapeMarkdownCell(participant.department)} | ${escapeMarkdownCell(participant.notification_status)} | ${escapeMarkdownCell(participant.survey_status)} |`,
+        `| ${escapeMarkdownCell(participant.rank)} | ${escapeMarkdownCell(participant.name)} | ${escapeMarkdownCell(participant.email)} | ${escapeMarkdownCell(participant.notification_status)} | ${escapeMarkdownCell(participant.survey_status)} |`,
     );
     sections.push(`## Participant List
 
-| Rank | Name | Email | Department | Notification | Survey |
-|---:|---|---|---|---|---|
-${rows.length > 0 ? rows.join('\n') : '| — | No participants | — | — | — | — |'}`);
+| Rank | Name | Email | Notification | Survey |
+|---:|---|---|---|---|
+${rows.length > 0 ? rows.join('\n') : '| — | No participants | — | — | — |'}`);
   }
 
   if (content.sections.surveyResults) {
@@ -245,7 +244,6 @@ function buildHtmlReport(content: ReportContent): string {
           <td>${escapeHtml(participant.rank)}</td>
           <td>${escapeHtml(participant.name)}</td>
           <td>${escapeHtml(participant.email)}</td>
-          <td>${escapeHtml(participant.department)}</td>
           <td>${escapeHtml(participant.notification_status)}</td>
           <td>${escapeHtml(participant.survey_status)}</td>
         </tr>`,
@@ -254,7 +252,7 @@ function buildHtmlReport(content: ReportContent): string {
     sections.push(`<section>
       <h2>Participant List</h2>
       <table>
-        <thead><tr><th>Rank</th><th>Name</th><th>Email</th><th>Department</th><th>Notification</th><th>Survey</th></tr></thead>
+        <thead><tr><th>Rank</th><th>Name</th><th>Email</th><th>Notification</th><th>Survey</th></tr></thead>
         <tbody>${rows || '<tr><td colspan="6">No participants</td></tr>'}</tbody>
       </table>
     </section>`);
@@ -468,7 +466,7 @@ reportsRouter.post(
       const participants = sections.participants
         ? (
             await pool.query<ParticipantReportRow>(
-              `SELECT pt.selection_rank AS rank, a.name, a.email, a.department,
+              `SELECT pt.selection_rank AS rank, a.name, a.email,
                       pt.notification_status, pt.survey_status
                FROM participants pt
                JOIN applicants a ON a.id = pt.applicant_id AND a.program_id = pt.program_id
