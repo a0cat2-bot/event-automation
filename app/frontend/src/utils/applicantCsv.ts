@@ -11,7 +11,7 @@ import type { SelectionMode } from '../api/programs';
  * and the natural fix — re-saving from Excel as EUC-KR — produces a file the upload cannot decode.
  */
 export function buildCsvTemplate(selectionMode: SelectionMode): string {
-  const columns = ['name', 'email', 'department'];
+  const columns = ['name', 'email'];
   if (selectionMode === 'score') columns.push('score');
   if (selectionMode === 'written_justification') columns.push('justification');
   columns.push('applied_at');
@@ -19,7 +19,6 @@ export function buildCsvTemplate(selectionMode: SelectionMode): string {
   const example: Record<string, string> = {
     name: '홍길동',
     email: 'gildong.hong@samsung.com',
-    department: 'AX센터 EHS그룹',
     score: '85',
     justification: '평소 안전관리에 관심이 많아 지원했습니다.',
     applied_at: '2026-09-01T09:00:00',

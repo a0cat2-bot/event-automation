@@ -15,7 +15,6 @@ export interface StagedApplicantRow {
   /** Identifies the applicant. Compared case-insensitively, matching the database unique index. */
   email: string;
   name: string;
-  department: string;
   score: number | null;
   justification: string | null;
   appliedAt: string;

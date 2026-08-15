@@ -26,7 +26,6 @@ export interface SallyStagedApplicantRecord {
   knox_id: string | null;
   name: string | null;
   applied_at: string | Date | null;
-  department: null;
   justification: string;
   score: null;
   issues: SourceIssue[];
@@ -253,7 +252,6 @@ export function parseSallyExport(data: Buffer): SallyStagedApplicantRecord[] {
         knox_id: identity.knoxId,
         name: identity.name,
         applied_at: appliedAtValue(row[submitTimeIndex]),
-        department: null,
         justification: JSON.stringify(answers),
         score: null,
         issues,
@@ -298,7 +296,6 @@ export async function stageSallyImport(options: {
       rowNumber,
       email,
       name,
-      department: '',
       score: null,
       justification: record.justification,
       appliedAt: Number.isNaN(parsedAppliedAt.getTime())

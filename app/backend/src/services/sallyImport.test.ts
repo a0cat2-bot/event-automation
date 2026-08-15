@@ -72,7 +72,6 @@ test('every answer column is captured, whatever a survey numbers its questions',
       knox_id: 'gildong.hong',
       name: '홍길동',
       applied_at: '2026-07-20T09:30:00+09:00',
-      department: null,
       justification: JSON.stringify({
         'Unused Q3': 'ignored',
         '현재 통증': 7,

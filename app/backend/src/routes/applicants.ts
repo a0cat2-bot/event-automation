@@ -46,7 +46,6 @@ interface StagedApplicantRow {
   rowNumber: number;
   email: string;
   name: string;
-  department: string;
   score: number | null;
   justification: string | null;
   appliedAt: string;
@@ -280,7 +279,6 @@ function parseApplicantRows(
   const rows = records.map<StagedApplicantRow>((record, index) => {
     const email = (record.email ?? '').trim();
     const name = (record.name ?? '').trim();
-    const department = (record.department ?? '').trim();
     const rawScore = (record.score ?? '').trim();
     const rawJustification = (record.justification ?? '').trim();
     const rawAppliedAt = (record.applied_at ?? '').trim();
@@ -292,7 +290,6 @@ function parseApplicantRows(
       rowNumber: index + 2,
       email,
       name,
-      department,
       score: null,
       justification: rawJustification || null,
       appliedAt: Number.isNaN(parsedAppliedAt.getTime())
@@ -303,7 +300,6 @@ function parseApplicantRows(
 
     requiredField(row, name, 'name');
     requiredField(row, email, 'email');
-    requiredField(row, department, 'department');
 
     if (name.length > 255) {
       addIssue(row, 'error', 'too_long', 'name must be at most 255 characters', 'name');
@@ -312,9 +308,6 @@ function parseApplicantRows(
       addIssue(row, 'error', 'too_long', 'email must be at most 255 characters', 'email');
     } else if (email && !basicEmailPattern.test(email)) {
       addIssue(row, 'error', 'invalid_email', 'email is not a valid email address', 'email');
-    }
-    if (department.length > 100) {
-      addIssue(row, 'error', 'too_long', 'department must be at most 100 characters', 'department');
     }
 
     if (selectionMode === 'score') {
@@ -428,7 +421,6 @@ function previewRow(row: StagedApplicantRow) {
     row_number: row.rowNumber,
     name: row.name,
     email: row.email,
-    department: row.department,
     score: row.score,
     justification: row.justification,
     applied_at: row.appliedAt,
@@ -650,7 +642,7 @@ applicantsRouter.post(
             programId,
             row.email,
             row.name,
-            row.department || null,
+            null,
             row.score,
             row.justification,
             row.appliedAt,
