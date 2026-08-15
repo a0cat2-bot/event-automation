@@ -22,7 +22,16 @@ import {
 } from './sallySession.js';
 import type { SallySurveyDraft, SallySurveyQuestion } from './sallySurveyDraft.js';
 
-const sallyHomeUrl = 'https://home.sally.coach/home';
+/**
+ * Entry point for deciding whether the browser is already signed in.
+ *
+ * Measured 2026-08-15: `sally.coach/` redirects to `/workspaces/{id}` when the cookies are good and
+ * out to `home.sally.coach/home` when they are not, so where it lands answers the question on its
+ * own. The marketing home page cannot: it renders 로그인/회원가입 for signed-in visitors too, which
+ * made every restored session look expired — worse than having no session at all, because a stored
+ * one suppresses the password fallback.
+ */
+const sallyHomeUrl = 'https://sally.coach/';
 const actionTimeoutMs = 30_000;
 const creationActionTimeoutMs = 5_000;
 const legacySessionDirectory = join(uploadsRoot, '.sally-session');
@@ -476,7 +485,10 @@ export async function createSallySurveyInEditor(
     await page.getByText('작성하기', { exact: true }).click({
       timeout: creationActionTimeoutMs,
     });
-    const blankSurvey = page.getByText('기본 서식 만들기', { exact: true }).first();
+    // Measured 2026-08-15: Sally renamed this menu. 기본 서식 만들기 no longer exists (count 0);
+    // the blank-survey entry is 설문 생성, sitting beside 퀴즈 생성 and 서식 선택하기. Each label
+    // matches twice — heading and description share it — and the first is the clickable one.
+    const blankSurvey = page.getByText('설문 생성', { exact: true }).first();
     await Promise.all([
       page.waitForURL(
         (url) =>
