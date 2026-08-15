@@ -81,7 +81,7 @@ function configuredKey(options: SessionOptions): string | undefined {
 export function encryptSallyStorageState(
   email: string,
   storageState: SallyStorageState,
-  keyValue: string | undefined = env.sallySessionEncryptionKey,
+  keyValue: string | undefined,
 ): string {
   const iv = randomBytes(12);
   const cipher = createCipheriv('aes-256-gcm', encryptionKey(keyValue), iv);
@@ -102,7 +102,7 @@ export function encryptSallyStorageState(
 export function decryptSallyStorageState(
   email: string,
   value: string,
-  keyValue: string | undefined = env.sallySessionEncryptionKey,
+  keyValue: string | undefined,
 ): SallyStorageState {
   const encrypted = JSON.parse(value) as EncryptedSession;
   if (encrypted.version !== 1) throw new Error('Unsupported Sally session encryption version.');

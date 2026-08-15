@@ -16,6 +16,7 @@ import { getLetterTemplates, type LetterTemplate } from '../api/letterTemplates'
 import { getProgram, type Program } from '../api/programs';
 import { PageShell } from '../components/PageShell';
 import { ProgramContextBar } from '../components/ProgramContextBar';
+import { SallySurveyDraftCard } from '../components/SallySurveyDraftCard';
 import { resolveBackendAssetUrl } from '../config/api';
 
 const TEMPLATE_TYPE_LABELS: Record<string, string> = {
@@ -226,6 +227,8 @@ export function LetterDraftsPage() {
           {loadError}
         </p>
       ) : null}
+
+      {!isLoading ? <SallySurveyDraftCard programId={programId} kind="recruitment" /> : null}
 
       {!isLoading ? (
         <section className="content-card" aria-label="모집 안내 발송">

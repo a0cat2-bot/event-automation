@@ -59,6 +59,10 @@ test('a missing encryption key refuses to store a Sally session', async () => {
     return { rows: [] };
   }) as unknown as Query;
 
+  // Passing the key explicitly as undefined must mean undefined. It once did not: the encrypt
+  // helper carried `= env.sallySessionEncryptionKey` as a default, and a default fills in for an
+  // explicit undefined — so this refusal quietly became "encrypt with whatever .env holds", and
+  // the test only still passed because the developer's .env had no key in it.
   await assert.rejects(
     () => storeSallySession(email, storageState, { encryptionKey: undefined, query }),
     SallySessionConfigurationError,
