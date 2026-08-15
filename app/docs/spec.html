@@ -211,8 +211,8 @@
       설계 원칙 그 자체이기 때문입니다.
     </p>
     <div class="facts">
-      <span>코드 <b>25,214</b>줄</span>
-      <span>테스트 <b>155</b>개</span>
+      <span>코드 <b>25,466</b>줄</span>
+      <span>테스트 <b>171</b>개</span>
       <span>화면 <b>20</b>개</span>
       <span>MCP 도구 <b>26</b>개</span>
       <span>AI 기능 <b>4</b>개</span>
@@ -240,6 +240,12 @@
 
   <section>
     <h2>한눈에 보기</h2>
+    <p class="note">
+      <span class="chip chip--ai">AI</span> 는 앱이 사내 AI Pro에 직접 묻는 것,
+      <span class="chip chip--agent">Agent</span> 는 사외 Claude·ChatGPT가 도구를 통해 판단을 대신 넣는 것,
+      <span class="chip chip--code">코드</span> 는 AI가 전혀 없는 것입니다.
+      <b>Agent 칩이 붙은 두 기능은 AI Pro가 없어도 AI로 처리할 수 있습니다.</b>
+    </p>
     <div class="scroller">
       <table>
         <thead>
@@ -255,10 +261,11 @@
           <tr><td class="name">설문 배너 이미지</td><td><span class="chip chip--code">코드</span></td><td>영향 없음</td></tr>
           <tr><td class="name">모집 메일 발송</td><td><span class="chip chip--code">코드</span></td><td>영향 없음</td></tr>
           <tr><td class="name">신청자 취합</td><td><span class="chip chip--code">코드</span></td><td>영향 없음</td></tr>
-          <tr><td class="name">참여자 선정</td><td><span class="chip chip--ai">AI</span> <span class="chip chip--code">코드</span></td><td>규칙 기반 채점으로 계속</td></tr>
+          <tr><td class="name">참여자 선정</td><td><span class="chip chip--ai">AI</span> <span class="chip chip--agent">Agent</span> <span class="chip chip--code">코드</span></td><td>규칙 기반 채점으로 계속</td></tr>
           <tr><td class="name">레터 생성·발송</td><td><span class="chip chip--ai">AI</span> <span class="chip chip--code">코드</span></td><td>코디네이터가 문구 작성</td></tr>
           <tr><td class="name">상품 지급</td><td><span class="chip chip--code">코드</span></td><td>영향 없음</td></tr>
-          <tr><td class="name">결과 보고서</td><td><span class="chip chip--ai">AI</span> <span class="chip chip--code">코드</span></td><td>제언 분석 섹션만 생략</td></tr>
+          <tr><td class="name">결과 보고서</td><td><span class="chip chip--ai">AI</span> <span class="chip chip--agent">Agent</span> <span class="chip chip--code">코드</span></td><td>제언 분석 섹션만 생략</td></tr>
+          <tr><td class="name">보고서 Confluence 게시</td><td><span class="chip chip--agent">Agent</span></td><td>내려받아 직접 붙여넣기</td></tr>
           <tr><td class="name">캐릭터 이미지</td><td><span class="chip chip--ai">AI</span></td><td>이미지 직접 업로드</td></tr>
           <tr><td class="name">소요시간 측정</td><td><span class="chip chip--code">코드</span></td><td>영향 없음</td></tr>
           <tr><td class="name">접근 통제</td><td><span class="chip chip--code">코드</span></td><td>영향 없음</td></tr>
@@ -509,6 +516,30 @@
         </div>
       </article>
 
+      <article class="feature">
+        <div class="feature__head">
+          <span class="feature__name">보고서 Confluence 게시</span>
+          <span class="chip chip--agent">Agent</span>
+          <span class="feature__file">사내 Confluence MCP (외부)</span>
+        </div>
+        <div class="split">
+          <div>
+            <h3 class="h-ai">Agent가 판단</h3>
+            <p>이 앱의 도구로 보고서를 받아 <b>사내 Confluence MCP의 도구로 넘깁니다.</b>
+            어느 공간에 어떤 제목으로 올릴지도 대화로 정합니다.</p>
+          </div>
+          <div>
+            <h3 class="h-code">코드가 실행</h3>
+            <p class="none">이 저장소에는 Confluence 코드가 한 줄도 없습니다. 양쪽 모두
+            남이 만든 도구이고, 잇는 일만 Claude가 합니다.</p>
+          </div>
+        </div>
+        <div class="feature__foot">
+          <b>연동을 만들지 않고 연동한 사례입니다.</b> Confluence API 키도, 우리 쪽 코드도,
+          배포도 필요 없습니다 — 서로 다른 두 MCP 서버를 Agent가 이어 줍니다.
+        </div>
+      </article>
+
     </div>
   </section>
 
@@ -547,7 +578,7 @@
           <tr><td class="name">이름</td><td>나감</td><td>조직이 취급을 허용하는 유일한 식별자</td></tr>
           <tr><td class="name">이메일 · 전화번호</td><td><b>제거</b></td><td>본인이 글에 적었더라도 지움</td></tr>
           <tr><td class="name">사번 · 주민번호</td><td><b>제거</b></td><td>사번은 애초에 저장하지 않음</td></tr>
-          <tr><td class="name">부서</td><td>안 보냄</td><td>프롬프트에 넣지 않음</td></tr>
+          <tr><td class="name">부서</td><td><b>해당 없음</b></td><td>2026-08-15 자로 저장 자체를 중단 (DB 컬럼 삭제)</td></tr>
           <tr><td class="name">지원서 · 설문 본문</td><td>위 제거 후 전송</td><td>—</td></tr>
         </tbody>
       </table>
@@ -557,6 +588,19 @@
       <p>
         DB 원문은 그대로입니다. 코디네이터가 보는 화면, 보고서의 인용문, AI를 쓰지 않는 채점은
         모두 <b>실제 작성 내용</b>을 씁니다.
+      </p>
+    </div>
+    <div class="callout">
+      <h3>사외 AI로 나갈 때는 이름조차 빼고 나갑니다</h3>
+      <p>
+        위 표는 사내 AI Pro 기준입니다. 사외 Claude·ChatGPT가 도구로 읽을 때는 더 엄격해서,
+        신청자·참여자·상품 수령자 모두 <b>이름과 이메일 자체가 빠지고</b> <code>신청자 1</code> 같은
+        핸들만 나갑니다. 모집 메일 미리보기도 주소 목록 대신 <b>수신자 수</b>만 돌려줍니다.
+        가리는 것이 아니라 항목을 빼므로 되돌릴 수 없습니다.
+      </p>
+      <p>
+        실제 응답으로 확인했습니다 — 전 프로그램의 신청자·참여자·수령자 조회에서
+        이름도, <code>@</code> 문자 하나도 나오지 않았습니다.
       </p>
     </div>
   </section>
@@ -632,7 +676,7 @@
   </section>
 
   <footer>
-    <div>기준일 2026-08-02 · 코드 25,214줄 · 테스트 155개 · 화면 20개 · MCP 도구 26개</div>
+    <div>기준일 2026-08-15 · 코드 25,466줄 · 테스트 171개 · 화면 20개 · MCP 도구 26개</div>
     <div>구조 상세는 <code>architecture.md</code>, 심사기준 매핑은 <code>saia-submission.md</code>를 보십시오.</div>
   </footer>
 
