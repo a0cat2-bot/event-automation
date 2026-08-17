@@ -110,9 +110,9 @@ export function SallySurveyDraftCard({
       setDraft(result.draft);
       if (result.created) {
         setActionMessage(
-          result.survey_url
-            ? `Sally에 설문을 생성하고 링크를 저장했습니다: ${result.survey_url}`
-            : 'Sally에 설문을 생성했습니다.',
+          result.editor_url
+            ? `Sally에 초안을 만들었습니다. 내용을 확인하고 배포하면 모집 링크가 생깁니다: ${result.editor_url}`
+            : 'Sally에 초안을 만들었습니다. 내용을 확인하고 배포해주세요.',
         );
       } else {
         setActionError(

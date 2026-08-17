@@ -284,7 +284,7 @@ export function LetterDraftsPage() {
                   {program.recruitment_survey_url}
                 </a>
               ) : (
-                '아직 저장되지 않았습니다. 먼저 모집 설문을 생성하세요.'
+                '아직 없습니다. 위에서 설문을 만든 뒤 Sally에서 배포하면 모집 링크가 생깁니다.'
               )}
             </p>
             <div className="standard-save-row">

@@ -8,7 +8,7 @@ export function registerSallyTools(server: McpServer, backendApiUrl: string): vo
     'event_automation_create_sally_survey',
     {
       description:
-        'Creates the requested Sally survey draft through server-side browser automation. On success returns the generated draft and its Sally editor URL; recruitment survey URLs are also stored on the program. A Sally UI mismatch returns the draft with created=false so a human can recover manually.',
+        'Creates the requested Sally survey draft through server-side browser automation. On success returns the generated draft and editor_url, the page a coordinator opens to review it. No link is stored on the program: Sally only mints the public survey address when someone distributes the draft, and the editor page is not usable by the people the letter goes to. A Sally UI mismatch returns the draft with created=false so a human can recover manually.',
       inputSchema: z.object({
         program_id: z.string().uuid().describe('Program UUID.'),
         kind: z.enum(['recruitment', 'satisfaction']).describe('Survey purpose.'),
@@ -34,7 +34,7 @@ export function registerSallyTools(server: McpServer, backendApiUrl: string): vo
     'event_automation_get_recruitment_survey_url',
     {
       description:
-        'Reads the Sally recruitment survey URL currently stored on a program. Returns { survey_url }, which is null until automated recruitment-survey creation succeeds.',
+        'Reads the Sally recruitment survey URL currently stored on a program — the public address the recruitment letter links to. Returns { survey_url }, which is null until the survey has been distributed in Sally; creating the draft alone does not set it.',
       inputSchema: z.object({
         program_id: z.string().uuid().describe('Program UUID.'),
       }),

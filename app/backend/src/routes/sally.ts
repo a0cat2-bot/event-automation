@@ -338,15 +338,11 @@ sallyRouter.post(
       const { kind } = sallySurveyBody.parse(request.body);
       const draft = generateSallySurveyDraft(program, kind, program.default_coordinator_name);
       try {
-        const surveyUrl = await createSallySurvey(request.user!.email, draft);
-        if (kind === 'recruitment') {
-          await pool.query(
-            `UPDATE programs
-             SET recruitment_survey_url = $2, updated_at = NOW()
-             WHERE id = $1`,
-            [programId, surveyUrl],
-          );
-        }
+        const editorUrl = await createSallySurvey(request.user!.email, draft);
+        // recruitment_survey_url is what the letter's call-to-action sends employees to, and what
+        // creation returns is the editor — a page only the coordinator can open. Sally mints the
+        // public link at distribution, so until someone distributes there is no address to store,
+        // and storing the editor one would mail everybody a link that does not work for them.
 
         await pool.query(
           `INSERT INTO audit_logs
@@ -355,7 +351,7 @@ sallyRouter.post(
           [
             getActorName(request),
             programId,
-            JSON.stringify({ kind, survey_title: draft.title, survey_url: surveyUrl }),
+            JSON.stringify({ kind, survey_title: draft.title, editor_url: editorUrl }),
             request.ip || null,
           ],
         );
@@ -364,7 +360,7 @@ sallyRouter.post(
           draft,
           created: true,
           automation_available: true,
-          survey_url: surveyUrl,
+          editor_url: editorUrl,
         });
         return;
       } catch (error) {
