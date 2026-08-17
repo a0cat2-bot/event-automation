@@ -628,9 +628,16 @@ export async function distributeSallySurveyInEditor(page: Page, editorUrl: strin
   const deliverUrl = editorUrl.replace(/\/edit\/?$/, '/deliver');
 
   await creationStep('open delivery tab', async () => {
-    await page.goto(deliverUrl, { waitUntil: 'domcontentloaded', timeout: creationActionTimeoutMs });
+    await page.goto(deliverUrl, { waitUntil: 'domcontentloaded', timeout: actionTimeoutMs });
+    // The options are rendered, then re-rendered, as Sally loads the survey behind them. Clicking
+    // on the first pass finds the element detached mid-click, so wait for the heading that only
+    // appears once the list has settled rather than for a duration that would be a guess.
+    await page.getByText('응답 수집 방법을 선택해 주세요').waitFor({
+      state: 'visible',
+      timeout: actionTimeoutMs,
+    });
     await page.getByText('URL 링크 공유', { exact: true }).first().click({
-      timeout: creationActionTimeoutMs,
+      timeout: actionTimeoutMs,
     });
   });
 
