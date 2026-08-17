@@ -211,7 +211,7 @@
       설계 원칙 그 자체이기 때문입니다.
     </p>
     <div class="facts">
-      <span>코드 <b>25,466</b>줄</span>
+      <span>코드 <b>25,740</b>줄</span>
       <span>테스트 <b>171</b>개</span>
       <span>화면 <b>20</b>개</span>
       <span>MCP 도구 <b>26</b>개</span>
@@ -258,6 +258,7 @@
         <tbody>
           <tr><td class="name">프로그램 관리</td><td><span class="chip chip--code">코드</span></td><td>영향 없음</td></tr>
           <tr><td class="name">Sally 설문 생성</td><td><span class="chip chip--code">코드</span></td><td>영향 없음</td></tr>
+          <tr><td class="name">Sally 설문 배포</td><td><span class="chip chip--code">코드</span></td><td>영향 없음</td></tr>
           <tr><td class="name">설문 배너 이미지</td><td><span class="chip chip--code">코드</span></td><td>영향 없음</td></tr>
           <tr><td class="name">모집 메일 발송</td><td><span class="chip chip--code">코드</span></td><td>영향 없음</td></tr>
           <tr><td class="name">신청자 취합</td><td><span class="chip chip--code">코드</span></td><td>영향 없음</td></tr>
@@ -392,8 +393,14 @@
           <div>
             <h3 class="h-code">코드가 실행</h3>
             <p>제목·설명·문항·제출 완료 메시지를 만듭니다. 일시가 정해져 있으면 참석 여부를,
-            비어 있으면 희망 시간대를 묻습니다. Sally에는 브라우저 자동화로 입력합니다.</p>
+            비어 있으면 희망 시간대를 묻습니다. Sally에는 브라우저 자동화로 입력합니다.
+            <b>배포까지</b> 앱에서 처리하고, 그때 Sally가 만드는 공개 링크를 받아 저장합니다.</p>
           </div>
+        </div>
+        <div class="feature__foot">
+          <b>모집 레터가 쓰는 링크는 배포해야 생깁니다.</b> 생성만 하면 편집기 주소뿐이고 그건
+          담당자만 열 수 있어, 저장하지 않습니다. 배포는 되돌릴 수 없어(설문이 수정 불가가 됩니다)
+          앱이 먼저 그 사실을 알리고 확인을 받습니다.
         </div>
         <div class="feature__foot">
           <b>이 앱이 만든 설문을 이 앱이 다시 읽을 수 있습니다.</b> 문항 문구가 취합 파서와 어긋나면
@@ -676,7 +683,7 @@
   </section>
 
   <footer>
-    <div>기준일 2026-08-15 · 코드 25,466줄 · 테스트 171개 · 화면 20개 · MCP 도구 26개</div>
+    <div>기준일 2026-08-17 · 코드 25,740줄 · 테스트 171개 · 화면 20개 · MCP 도구 26개</div>
     <div>구조 상세는 <code>architecture.md</code>, 심사기준 매핑은 <code>saia-submission.md</code>를 보십시오.</div>
   </footer>
 
