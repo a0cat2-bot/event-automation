@@ -1,8 +1,10 @@
 import { useEffect, useState, type FormEvent } from 'react';
 
+import { getProgram, type Program } from '../api/programs';
 import {
   connectSallySession,
   createSallySurvey,
+  distributeSallySurvey,
   disconnectSallySession,
   getSallySessionStatus,
   getSallySurveyDescriptionImage,
@@ -49,6 +51,8 @@ export function SallySurveyDraftCard({
   const [sessionError, setSessionError] = useState<string | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [program, setProgram] = useState<Program | null>(null);
+  const [isDistributing, setIsDistributing] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -65,6 +69,12 @@ export function SallySurveyDraftCard({
         if (error instanceof DOMException && error.name === 'AbortError') return;
         setLoadError(error instanceof Error ? error.message : '설문 초안을 불러오지 못했습니다.');
       });
+    if (kind === 'recruitment') {
+      setProgram(null);
+      getProgram(programId, controller.signal)
+        .then(({ program: nextProgram }) => setProgram(nextProgram))
+        .catch(() => undefined);
+    }
     getSallySessionStatus(controller.signal)
       .then(setSessionStatus)
       .catch((error: unknown) => {
@@ -114,6 +124,11 @@ export function SallySurveyDraftCard({
             ? `Sally에 초안을 만들었습니다. 내용을 확인하고 배포하면 모집 링크가 생깁니다: ${result.editor_url}`
             : 'Sally에 초안을 만들었습니다. 내용을 확인하고 배포해주세요.',
         );
+        if (kind === 'recruitment') {
+          getProgram(programId)
+            .then(({ program: nextProgram }) => setProgram(nextProgram))
+            .catch(() => undefined);
+        }
       } else {
         setActionError(
           `Sally 자동 생성을 사용할 수 없습니다. 아래 초안을 복사해 직접 생성해주세요. ${result.reason ?? ''}`.trim(),
@@ -148,6 +163,38 @@ export function SallySurveyDraftCard({
     } finally {
       password = '';
       setIsConnecting(false);
+    }
+  }
+
+
+  async function handleDistribute() {
+    // Sally locks a distributed survey against editing, so the coordinator has to know that before
+    // it happens rather than discover it afterwards.
+    if (
+      !window.confirm(
+        '배포하면 설문을 더 이상 수정할 수 없습니다.\n모집 링크를 만들고 레터에 연결할까요?',
+      )
+    ) {
+      return;
+    }
+    setIsDistributing(true);
+    setActionMessage(null);
+    setActionError(null);
+    try {
+      const result = await distributeSallySurvey(programId);
+      if (result.distributed && result.survey_url) {
+        setActionMessage(`배포했습니다. 모집 링크: ${result.survey_url}`);
+        const { program: nextProgram } = await getProgram(programId);
+        setProgram(nextProgram);
+      } else {
+        setActionError(
+          `Sally 자동 배포를 사용할 수 없습니다. Sally에서 직접 배포해주세요. ${result.reason ?? ''}`.trim(),
+        );
+      }
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : '설문을 배포하지 못했습니다.');
+    } finally {
+      setIsDistributing(false);
     }
   }
 
@@ -295,6 +342,24 @@ export function SallySurveyDraftCard({
             >
               {isCreating ? 'Sally에 생성 중…' : 'Sally에 생성'}
             </button>
+            {kind === 'recruitment' && program?.recruitment_survey_editor_url ? (
+              <button
+                className="button button--primary"
+                type="button"
+                onClick={handleDistribute}
+                disabled={
+                  isDistributing ||
+                  !sessionStatus?.connected ||
+                  Boolean(program.recruitment_survey_url)
+                }
+              >
+                {program.recruitment_survey_url
+                  ? '배포됨'
+                  : isDistributing
+                    ? '배포 중…'
+                    : '배포하고 모집 링크 만들기'}
+              </button>
+            ) : null}
           </div>
           {actionMessage ? <p className="save-success">{actionMessage}</p> : null}
           {actionError ? (

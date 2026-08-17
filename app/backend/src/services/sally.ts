@@ -612,3 +612,94 @@ export async function createSallySurvey(
     await browser?.close().catch(() => undefined);
   }
 }
+
+/**
+ * Distributes an existing draft as a shareable URL and returns the address employees will open.
+ *
+ * Sally mints that address here and nowhere else, which is why creation cannot supply it. The
+ * measured path (2026-08-15) is: the deliver tab, then URL 링크 공유, then a URL 링크 생성 modal
+ * whose 작성 button commits it, then a second dialog — 배포된 설문은 편집할 수 없습니다 —
+ * needing 확인. Both buttons are text inside a wrapper div and only the wrapper takes the click,
+ * the same shape as the duplicate-session dialog.
+ *
+ * 작성 also names a tab in the survey header, so the modal has to be scoped before matching it.
+ */
+export async function distributeSallySurveyInEditor(page: Page, editorUrl: string): Promise<string> {
+  const deliverUrl = editorUrl.replace(/\/edit\/?$/, '/deliver');
+
+  await creationStep('open delivery tab', async () => {
+    await page.goto(deliverUrl, { waitUntil: 'domcontentloaded', timeout: creationActionTimeoutMs });
+    await page.getByText('URL 링크 공유', { exact: true }).first().click({
+      timeout: creationActionTimeoutMs,
+    });
+  });
+
+  await creationStep('confirm link creation', async () => {
+    await page
+      .locator('[class*="sally-modal"]')
+      .getByText('작성', { exact: true })
+      .locator('..')
+      .click({ timeout: creationActionTimeoutMs });
+  });
+
+  await creationStep('acknowledge that distribution locks editing', async () => {
+    const confirm = page.getByText('확인', { exact: true });
+    await confirm.waitFor({ state: 'visible', timeout: creationActionTimeoutMs });
+    await confirm.last().locator('..').click({ timeout: creationActionTimeoutMs });
+  });
+
+  return creationStep('read the shared survey link', async () => {
+    const link = page.getByText(/https:\/\/sally\.coach\/survey\//).first();
+    await link.waitFor({ state: 'visible', timeout: creationActionTimeoutMs });
+    const match = (await link.innerText()).match(/https:\/\/sally\.coach\/survey\/\S+/);
+    if (!match) throw new Error('the distributed survey link was not shown');
+    return match[0];
+  });
+}
+
+export async function distributeSallySurvey(
+  coordinatorEmail: string,
+  editorUrl: string,
+): Promise<string> {
+  let browser: Browser | undefined;
+  let context: BrowserContext | undefined;
+  let page: Page | undefined;
+  let storedSession: StoredSallySession | undefined;
+
+  try {
+    const browserContext = await createBrowserContext(coordinatorEmail);
+    ({ browser, context, storedSession } = browserContext);
+    page = await sallyLogin(context, {
+      credentials: browserContext.loginCredentials,
+      connectionRequiredError: storedSession
+        ? new SallyConnectionRequiredError(
+            'The stored Sally session has expired. Reconnect the Sally account.',
+            true,
+            storedSession.storedAt,
+            storedSession.lastUsedAt,
+          )
+        : undefined,
+    });
+    page.setDefaultTimeout(creationActionTimeoutMs);
+    page.setDefaultNavigationTimeout(creationActionTimeoutMs);
+    const surveyUrl = await distributeSallySurveyInEditor(page, editorUrl);
+    if (storedSession) {
+      await refreshSallySession(coordinatorEmail, await context.storageState());
+    }
+    return surveyUrl;
+  } catch (error) {
+    if (error instanceof SallyUiMismatchError) throw error;
+    if (
+      error instanceof SallyConfigurationError ||
+      error instanceof SallySessionConfigurationError ||
+      error instanceof SallyConnectionRequiredError ||
+      error instanceof SallyLoginError
+    ) {
+      throw error;
+    }
+    throw new SallyCreationError(`Sally survey distribution failed: ${errorMessage(error)}`);
+  } finally {
+    await context?.close().catch(() => undefined);
+    await browser?.close().catch(() => undefined);
+  }
+}

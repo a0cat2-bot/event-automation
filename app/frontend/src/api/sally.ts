@@ -66,6 +66,21 @@ export function getSallySurveyDraft(
   });
 }
 
+export type SallySurveyDistributionResponse = {
+  distributed: boolean;
+  survey_url?: string;
+  automation_available?: boolean;
+  reason?: string;
+};
+
+export function distributeSallySurvey(
+  programId: string,
+): Promise<SallySurveyDistributionResponse> {
+  return apiRequest(`/programs/${encodeURIComponent(programId)}/sally/surveys/distribute`, {
+    method: 'POST',
+  });
+}
+
 export function createSallySurvey(
   programId: string,
   kind: SallySurveyKind,

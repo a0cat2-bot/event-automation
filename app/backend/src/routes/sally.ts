@@ -21,6 +21,7 @@ import {
 import {
   connectSallyAccount,
   createSallySurvey,
+  distributeSallySurvey,
   downloadSurveyResults,
   SallyConfigurationError,
   SallyCreationError,
@@ -341,8 +342,16 @@ sallyRouter.post(
         const editorUrl = await createSallySurvey(request.user!.email, draft);
         // recruitment_survey_url is what the letter's call-to-action sends employees to, and what
         // creation returns is the editor — a page only the coordinator can open. Sally mints the
-        // public link at distribution, so until someone distributes there is no address to store,
-        // and storing the editor one would mail everybody a link that does not work for them.
+        // public link at distribution, so the editor address is kept in its own column, where
+        // distribution can find this draft again rather than guessing which survey was meant.
+        if (kind === 'recruitment') {
+          await pool.query(
+            `UPDATE programs
+             SET recruitment_survey_editor_url = $2, updated_at = NOW()
+             WHERE id = $1`,
+            [programId, editorUrl],
+          );
+        }
 
         await pool.query(
           `INSERT INTO audit_logs
@@ -369,6 +378,79 @@ sallyRouter.post(
         response.json({
           draft,
           created: false,
+          automation_available: false,
+          reason: error.message,
+        });
+        return;
+      }
+    } catch (error) {
+      if (!handleSallyError(response, error)) next(error);
+    }
+  },
+);
+
+sallyRouter.post(
+  '/programs/:program_id/sally/surveys/distribute',
+  validate({ params: programParams }),
+  async (request: Request, response: Response, next: NextFunction) => {
+    try {
+      const programId = request.params.program_id as string;
+      const result = await pool.query<{
+        recruitment_survey_editor_url: string | null;
+        recruitment_survey_url: string | null;
+      }>(
+        `SELECT recruitment_survey_editor_url, recruitment_survey_url
+         FROM programs WHERE id = $1 AND deleted_at IS NULL LIMIT 1`,
+        [programId],
+      );
+      const program = result.rows[0];
+      if (!program) {
+        response.status(404).json({ error: 'Program not found' });
+        return;
+      }
+      if (program.recruitment_survey_url) {
+        // Distribution is one-way — Sally locks the survey against editing — so a second run would
+        // publish a duplicate collection method rather than correct anything.
+        response.status(409).json({
+          error: '이미 배포된 설문입니다.',
+          survey_url: program.recruitment_survey_url,
+        });
+        return;
+      }
+      if (!program.recruitment_survey_editor_url) {
+        response.status(409).json({
+          error: '먼저 Sally에 설문을 만들어야 배포할 수 있습니다.',
+        });
+        return;
+      }
+
+      try {
+        const surveyUrl = await distributeSallySurvey(
+          request.user!.email,
+          program.recruitment_survey_editor_url,
+        );
+        await pool.query(
+          `UPDATE programs SET recruitment_survey_url = $2, updated_at = NOW() WHERE id = $1`,
+          [programId, surveyUrl],
+        );
+        await pool.query(
+          `INSERT INTO audit_logs
+             (actor_name, action, entity_type, entity_id, program_id, details, ip_address)
+           VALUES ($1, 'sally_survey_distributed', 'program', $2, $2, $3::jsonb, $4)`,
+          [
+            getActorName(request),
+            programId,
+            JSON.stringify({ survey_url: surveyUrl }),
+            request.ip || null,
+          ],
+        );
+        response.status(201).json({ distributed: true, survey_url: surveyUrl });
+        return;
+      } catch (error) {
+        if (!(error instanceof SallyUiMismatchError)) throw error;
+        await notifySallyUiMismatch(error.step);
+        response.json({
+          distributed: false,
           automation_available: false,
           reason: error.message,
         });
